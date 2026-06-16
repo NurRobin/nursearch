@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=NurSearch
+Comment=Small local app launcher
+Exec=~/.local/bin/nursearch
+Icon=system-search
+Terminal=false
+Categories=Utility;
