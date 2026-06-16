@@ -1,5 +1,4 @@
 use rusqlite::{Connection, Result, params};
-use std::env;
 use std::fs;
 use std::path::PathBuf;
 
@@ -114,11 +113,7 @@ pub fn normalize_query(query: &str) -> String {
 }
 
 fn data_dir() -> PathBuf {
-    if let Ok(data_home) = env::var("XDG_DATA_HOME") {
-        return PathBuf::from(data_home).join("nursearch");
-    }
-
-    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home).join(".local/share/nursearch")
 }
 
