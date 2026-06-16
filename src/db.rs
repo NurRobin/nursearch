@@ -17,12 +17,25 @@ pub struct HistoryDb {
 impl HistoryDb {
     pub fn open() -> Result<Self> {
         let path = data_dir().join("history.sqlite");
+        Self::open_at(path)
+    }
+
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        Self::from_connection(conn)
+    }
+
+    fn open_at(path: PathBuf) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
         }
 
         let conn = Connection::open(path)?;
+        Self::from_connection(conn)
+    }
+
+    fn from_connection(conn: Connection) -> Result<Self> {
         conn.execute_batch(
             "
             PRAGMA foreign_keys = ON;
@@ -105,6 +118,37 @@ impl HistoryDb {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn records_global_and_query_usage() {
+        let db = HistoryDb::open_in_memory().unwrap();
+
+        db.record_launch("  Term  ", "/tmp/terminal.desktop")
+            .unwrap();
+        db.record_launch("term", "/tmp/terminal.desktop").unwrap();
+
+        let stats = db.stats_for("TERM", "/tmp/terminal.desktop").unwrap();
+        assert_eq!(stats.global_count, 2);
+        assert_eq!(stats.query_count, 2);
+        assert!(stats.global_last_used > 0);
+        assert!(stats.query_last_used > 0);
+    }
+
+    #[test]
+    fn ignores_empty_query_usage() {
+        let db = HistoryDb::open_in_memory().unwrap();
+
+        db.record_launch("   ", "/tmp/terminal.desktop").unwrap();
+
+        let stats = db.stats_for("", "/tmp/terminal.desktop").unwrap();
+        assert_eq!(stats.global_count, 1);
+        assert_eq!(stats.query_count, 0);
     }
 }
 

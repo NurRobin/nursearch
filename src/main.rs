@@ -11,6 +11,7 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use rank::{RankedApp, rank_apps};
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 
 const APP_ID: &str = "dev.nursearch.NurSearch";
@@ -29,12 +30,21 @@ fn main() -> glib::ExitCode {
 
 fn build_ui(app: &gtk::Application) {
     let apps = discover_apps();
-    let db = match HistoryDb::open() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("Failed to open history database: {err}");
-            return;
-        }
+    let (db, startup_error) = match HistoryDb::open() {
+        Ok(db) => (db, None),
+        Err(err) => match HistoryDb::open_in_memory() {
+            Ok(db) => (
+                db,
+                Some(format!(
+                    "History database is unavailable; using temporary history: {err}"
+                )),
+            ),
+            Err(memory_err) => {
+                eprintln!("Failed to open history database: {err}");
+                eprintln!("Failed to open temporary history database: {memory_err}");
+                return;
+            }
+        },
     };
 
     let state = Rc::new(RefCell::new(AppState {
@@ -69,33 +79,56 @@ fn build_ui(app: &gtk::Application) {
         .selection_mode(gtk::SelectionMode::Single)
         .activate_on_single_click(false)
         .build();
+    let status = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .visible(false)
+        .build();
+    status.add_css_class("error-status");
 
     root.append(&entry);
+    root.append(&status);
     root.append(&list);
     window.set_child(Some(&root));
 
     install_css();
+    if let Some(error) = startup_error {
+        show_error(&status, &error);
+    }
     refresh_results(&state, &entry, &list);
 
     {
         let state = Rc::clone(&state);
         let list = list.clone();
-        entry.connect_changed(move |entry| refresh_results(&state, entry, &list));
+        let status = status.clone();
+        entry.connect_changed(move |entry| {
+            status.set_visible(false);
+            refresh_results(&state, entry, &list);
+        });
     }
 
     {
         let state = Rc::clone(&state);
         let window = window.clone();
-        entry
-            .connect_activate(move |entry| launch_index(&state, entry.text().as_ref(), 0, &window));
+        let status = status.clone();
+        entry.connect_activate(move |entry| {
+            launch_index(&state, entry.text().as_ref(), 0, &window, &status)
+        });
     }
 
     {
         let state = Rc::clone(&state);
         let entry = entry.clone();
         let window = window.clone();
+        let status = status.clone();
         list.connect_row_activated(move |_, row| {
-            launch_index(&state, entry.text().as_ref(), row.index() as usize, &window);
+            launch_index(
+                &state,
+                entry.text().as_ref(),
+                row.index() as usize,
+                &window,
+                &status,
+            );
         });
     }
 
@@ -105,6 +138,7 @@ fn build_ui(app: &gtk::Application) {
         let list = list.clone();
         let state = Rc::clone(&state);
         let entry = entry.clone();
+        let status = status.clone();
         key_controller.connect_key_pressed(move |_, key, _, _| match key {
             gdk::Key::Escape => {
                 window.close();
@@ -123,7 +157,7 @@ fn build_ui(app: &gtk::Application) {
                     .selected_row()
                     .map(|row| row.index() as usize)
                     .unwrap_or(0);
-                launch_index(&state, entry.text().as_ref(), index, &window);
+                launch_index(&state, entry.text().as_ref(), index, &window, &status);
                 glib::Propagation::Stop
             }
             _ => glib::Propagation::Proceed,
@@ -149,12 +183,7 @@ fn refresh_results(state: &Rc<RefCell<AppState>>, entry: &gtk::Entry, list: &gtk
         row.set_activatable(true);
         row.set_selectable(true);
 
-        let label = gtk::Label::builder()
-            .label(row_text(result))
-            .xalign(0.0)
-            .ellipsize(gtk::pango::EllipsizeMode::End)
-            .build();
-        row.set_child(Some(&label));
+        row.set_child(Some(&result_row(result)));
         list.append(&row);
     }
 
@@ -163,11 +192,67 @@ fn refresh_results(state: &Rc<RefCell<AppState>>, entry: &gtk::Entry, list: &gtk
     }
 }
 
-fn row_text(result: &RankedApp) -> String {
-    match &result.app.icon {
-        Some(icon) if !icon.is_empty() => format!("{}   {}", result.app.name, icon),
-        _ => result.app.name.clone(),
+fn result_row(result: &RankedApp) -> gtk::Box {
+    let row = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(10)
+        .valign(gtk::Align::Center)
+        .build();
+    row.add_css_class("result-row");
+
+    let image = icon_image(result.app.icon.as_deref());
+    row.append(&image);
+
+    let text = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(1)
+        .hexpand(true)
+        .build();
+
+    let name = gtk::Label::builder()
+        .label(&result.app.name)
+        .xalign(0.0)
+        .ellipsize(gtk::pango::EllipsizeMode::End)
+        .build();
+    name.add_css_class("result-name");
+    text.append(&name);
+
+    if let Some(detail_text) = row_detail_text(result) {
+        let detail = gtk::Label::builder()
+            .label(&detail_text)
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build();
+        detail.add_css_class("result-detail");
+        text.append(&detail);
     }
+
+    row.append(&text);
+    row
+}
+
+fn row_detail_text(result: &RankedApp) -> Option<String> {
+    result
+        .app
+        .generic_name
+        .as_ref()
+        .or(result.app.comment.as_ref())
+        .cloned()
+}
+
+fn icon_image(icon: Option<&str>) -> gtk::Image {
+    let image = match icon.filter(|icon| !icon.is_empty()) {
+        Some(icon) if Path::new(icon).is_absolute() => gtk::Image::from_file(icon),
+        Some(icon) => gtk::Image::from_icon_name(icon),
+        None => gtk::Image::from_icon_name("application-x-executable"),
+    };
+    image.set_pixel_size(24);
+    image
+}
+
+fn show_error(label: &gtk::Label, message: &str) {
+    label.set_text(message);
+    label.set_visible(true);
 }
 
 fn launch_index(
@@ -175,6 +260,7 @@ fn launch_index(
     query: &str,
     index: usize,
     window: &gtk::ApplicationWindow,
+    status: &gtk::Label,
 ) {
     let app = {
         let state = state.borrow();
@@ -188,15 +274,14 @@ fn launch_index(
     {
         let state = state.borrow();
         if let Err(err) = state.db.record_launch(query, &app.path.to_string_lossy()) {
-            eprintln!("Failed to record launch history: {err}");
+            show_error(status, &format!("Could not update launch history: {err}"));
         }
     }
 
-    if let Err(err) = launch::launch(&app) {
-        eprintln!("Failed to launch {}: {err}", app.name);
+    match launch::launch(&app) {
+        Ok(()) => window.close(),
+        Err(err) => show_error(status, &format!("Could not launch {}: {err}", app.name)),
     }
-
-    window.close();
 }
 
 fn move_selection(list: &gtk::ListBox, direction: i32) {
@@ -228,12 +313,31 @@ fn install_css() {
         }
 
         row {
-            min-height: 34px;
-            padding: 5px 8px;
+            min-height: 46px;
+            padding: 4px 8px;
         }
 
         row:selected {
             background: #3f6f8f;
+        }
+
+        .result-row {
+            padding: 3px 0;
+        }
+
+        .result-name {
+            font-size: 15px;
+        }
+
+        .result-detail {
+            color: #b8b8b8;
+            font-size: 12px;
+        }
+
+        .error-status {
+            color: #ffb4a8;
+            font-size: 13px;
+            padding: 0 4px;
         }
         ",
     );

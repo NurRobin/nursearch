@@ -12,7 +12,7 @@ pub fn rank_apps(apps: &[DesktopEntry], query: &str, db: &HistoryDb) -> Vec<Rank
     let mut ranked = Vec::new();
 
     for app in apps {
-        let Some(match_score) = match_score(&app.name, &normalized_query) else {
+        let Some(match_score) = app_match_score(app, &normalized_query) else {
             continue;
         };
         let stats = db
@@ -38,23 +38,30 @@ pub fn rank_apps(apps: &[DesktopEntry], query: &str, db: &HistoryDb) -> Vec<Rank
     ranked
 }
 
-fn match_score(name: &str, query: &str) -> Option<i64> {
+fn app_match_score(app: &DesktopEntry, query: &str) -> Option<i64> {
+    let name_score = match_score(&app.name, query);
+    let metadata_score = match_score(&app.search_text(), query).map(|score| score - 2_500);
+
+    name_score.max(metadata_score)
+}
+
+pub(crate) fn match_score(text: &str, query: &str) -> Option<i64> {
     if query.is_empty() {
         return Some(1_000);
     }
 
-    let name = name.to_lowercase();
-    if name == query {
+    let text = text.to_lowercase();
+    if text == query {
         return Some(10_000);
     }
-    if name.starts_with(query) {
-        return Some(8_000 - name.len() as i64);
+    if text.starts_with(query) {
+        return Some(8_000 - text.len() as i64);
     }
-    if let Some(index) = name.find(query) {
-        return Some(6_000 - index as i64 - name.len() as i64);
+    if let Some(index) = text.find(query) {
+        return Some(6_000 - index as i64 - text.len() as i64);
     }
 
-    fuzzy_score(&name, query).map(|score| 3_000 + score)
+    fuzzy_score(&text, query).map(|score| 3_000 + score)
 }
 
 fn fuzzy_score(name: &str, query: &str) -> Option<i64> {
@@ -106,5 +113,88 @@ fn recency_bonus(last_used: i64) -> i64 {
         25..=168 => 60,
         169..=720 => 25,
         _ => 5,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::HistoryDb;
+    use std::path::PathBuf;
+
+    fn test_app(
+        name: &str,
+        generic_name: Option<&str>,
+        comment: Option<&str>,
+        keywords: &[&str],
+        path: &str,
+    ) -> DesktopEntry {
+        DesktopEntry {
+            name: name.to_string(),
+            generic_name: generic_name.map(ToOwned::to_owned),
+            comment: comment.map(ToOwned::to_owned),
+            keywords: keywords.iter().map(|keyword| keyword.to_string()).collect(),
+            exec: Some(name.to_lowercase()),
+            icon: None,
+            path: PathBuf::from(path),
+            dbus_activatable: false,
+            terminal: false,
+        }
+    }
+
+    #[test]
+    fn exact_match_scores_highest() {
+        assert!(
+            match_score("Firefox", "firefox").unwrap() > match_score("Firefox", "fire").unwrap()
+        );
+    }
+
+    #[test]
+    fn substring_beats_sparse_fuzzy_match() {
+        assert!(
+            match_score("Web Browser", "browser").unwrap()
+                > match_score("Word Builder", "wb").unwrap()
+        );
+    }
+
+    #[test]
+    fn returns_none_when_query_characters_are_missing() {
+        assert_eq!(match_score("Terminal", "xyz"), None);
+    }
+
+    #[test]
+    fn ranks_apps_by_desktop_metadata() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let apps = vec![test_app(
+            "Firefox",
+            Some("Web Browser"),
+            Some("Browse the web"),
+            &["internet"],
+            "/tmp/firefox.desktop",
+        )];
+
+        let results = rank_apps(&apps, "internet", &db);
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].app.name, "Firefox");
+    }
+
+    #[test]
+    fn exact_app_name_beats_shorter_prefix_match_with_metadata() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let apps = vec![
+            test_app(
+                "Term",
+                Some("Terminal Emulator"),
+                Some("A long comment that used to reduce exact-name score"),
+                &["shell", "console"],
+                "/tmp/term.desktop",
+            ),
+            test_app("Terminal", None, None, &[], "/tmp/terminal.desktop"),
+        ];
+
+        let results = rank_apps(&apps, "term", &db);
+
+        assert_eq!(results[0].app.name, "Term");
     }
 }
