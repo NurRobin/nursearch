@@ -9,6 +9,7 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk4 as gtk;
+use log::{debug, error, info, warn};
 use rank::{RankedApp, rank_apps};
 use std::cell::RefCell;
 use std::path::Path;
@@ -23,6 +24,9 @@ struct AppState {
 }
 
 fn main() -> glib::ExitCode {
+    init_logging();
+    info!("starting NurSearch");
+
     let app = gtk::Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
     app.run()
@@ -30,18 +34,26 @@ fn main() -> glib::ExitCode {
 
 fn build_ui(app: &gtk::Application) {
     let apps = discover_apps();
+    info!("discovered {} desktop applications", apps.len());
+
     let (db, startup_error) = match HistoryDb::open() {
-        Ok(db) => (db, None),
+        Ok(db) => {
+            debug!("opened persistent history database");
+            (db, None)
+        }
         Err(err) => match HistoryDb::open_in_memory() {
-            Ok(db) => (
-                db,
-                Some(format!(
-                    "History database is unavailable; using temporary history: {err}"
-                )),
-            ),
+            Ok(db) => {
+                warn!("history database is unavailable; using temporary history: {err}");
+                (
+                    db,
+                    Some(format!(
+                        "History database is unavailable; using temporary history: {err}"
+                    )),
+                )
+            }
             Err(memory_err) => {
-                eprintln!("Failed to open history database: {err}");
-                eprintln!("Failed to open temporary history database: {memory_err}");
+                error!("failed to open history database: {err}");
+                error!("failed to open temporary history database: {memory_err}");
                 return;
             }
         },
@@ -56,29 +68,51 @@ fn build_ui(app: &gtk::Application) {
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title("NurSearch")
-        .default_width(640)
-        .default_height(420)
+        .default_width(720)
+        .default_height(520)
         .decorated(false)
         .resizable(false)
         .build();
 
     let root = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
+        .spacing(12)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
         .build();
+    root.add_css_class("launcher-shell");
 
     let entry = gtk::Entry::builder()
-        .placeholder_text("Search apps")
+        .placeholder_text("Apps suchen")
         .hexpand(true)
         .build();
+    entry.set_primary_icon_name(Some("system-search-symbolic"));
+    entry.add_css_class("search-entry");
+
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::Single)
         .activate_on_single_click(false)
         .build();
+    list.add_css_class("results-list");
+
+    let scroller = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .child(&list)
+        .build();
+    scroller.add_css_class("results-scroller");
+
+    let empty = gtk::Label::builder()
+        .label("Keine Treffer")
+        .xalign(0.0)
+        .visible(false)
+        .build();
+    empty.add_css_class("empty-state");
+
     let status = gtk::Label::builder()
         .xalign(0.0)
         .wrap(true)
@@ -88,22 +122,24 @@ fn build_ui(app: &gtk::Application) {
 
     root.append(&entry);
     root.append(&status);
-    root.append(&list);
+    root.append(&scroller);
+    root.append(&empty);
     window.set_child(Some(&root));
 
     install_css();
     if let Some(error) = startup_error {
         show_error(&status, &error);
     }
-    refresh_results(&state, &entry, &list);
+    refresh_results(&state, &entry, &list, &empty);
 
     {
         let state = Rc::clone(&state);
         let list = list.clone();
+        let empty = empty.clone();
         let status = status.clone();
         entry.connect_changed(move |entry| {
             status.set_visible(false);
-            refresh_results(&state, entry, &list);
+            refresh_results(&state, entry, &list, &empty);
         });
     }
 
@@ -136,6 +172,7 @@ fn build_ui(app: &gtk::Application) {
     {
         let window = window.clone();
         let list = list.clone();
+        let scroller = scroller.clone();
         let state = Rc::clone(&state);
         let entry = entry.clone();
         let status = status.clone();
@@ -145,11 +182,11 @@ fn build_ui(app: &gtk::Application) {
                 glib::Propagation::Stop
             }
             gdk::Key::Down => {
-                move_selection(&list, 1);
+                move_selection(&list, &scroller, 1);
                 glib::Propagation::Stop
             }
             gdk::Key::Up => {
-                move_selection(&list, -1);
+                move_selection(&list, &scroller, -1);
                 glib::Propagation::Stop
             }
             gdk::Key::Return | gdk::Key::KP_Enter => {
@@ -167,9 +204,21 @@ fn build_ui(app: &gtk::Application) {
 
     window.present();
     entry.grab_focus();
+    debug!("launcher window presented");
 }
 
-fn refresh_results(state: &Rc<RefCell<AppState>>, entry: &gtk::Entry, list: &gtk::ListBox) {
+fn init_logging() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("nursearch=info"))
+        .format_timestamp_secs()
+        .init();
+}
+
+fn refresh_results(
+    state: &Rc<RefCell<AppState>>,
+    entry: &gtk::Entry,
+    list: &gtk::ListBox,
+    empty: &gtk::Label,
+) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -177,15 +226,25 @@ fn refresh_results(state: &Rc<RefCell<AppState>>, entry: &gtk::Entry, list: &gtk
     let query = entry.text();
     let mut state = state.borrow_mut();
     state.results = rank_apps(&state.apps, query.as_ref(), &state.db);
+    debug!(
+        "query refreshed: query={:?}, results={}",
+        query.as_str(),
+        state.results.len()
+    );
 
     for result in &state.results {
         let row = gtk::ListBoxRow::new();
         row.set_activatable(true);
         row.set_selectable(true);
+        row.add_css_class("result-list-row");
 
         row.set_child(Some(&result_row(result)));
         list.append(&row);
     }
+
+    let has_results = !state.results.is_empty();
+    empty.set_visible(!has_results);
+    list.set_visible(has_results);
 
     if let Some(row) = list.row_at_index(0) {
         list.select_row(Some(&row));
@@ -195,7 +254,7 @@ fn refresh_results(state: &Rc<RefCell<AppState>>, entry: &gtk::Entry, list: &gtk
 fn result_row(result: &RankedApp) -> gtk::Box {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
-        .spacing(10)
+        .spacing(14)
         .valign(gtk::Align::Center)
         .build();
     row.add_css_class("result-row");
@@ -246,7 +305,7 @@ fn icon_image(icon: Option<&str>) -> gtk::Image {
         Some(icon) => gtk::Image::from_icon_name(icon),
         None => gtk::Image::from_icon_name("application-x-executable"),
     };
-    image.set_pixel_size(24);
+    image.set_pixel_size(32);
     image
 }
 
@@ -274,22 +333,50 @@ fn launch_index(
     {
         let state = state.borrow();
         if let Err(err) = state.db.record_launch(query, &app.path.to_string_lossy()) {
+            warn!("could not update launch history for {}: {err}", app.name);
             show_error(status, &format!("Could not update launch history: {err}"));
         }
     }
 
+    info!("launching app: {}", app.name);
     match launch::launch(&app) {
-        Ok(()) => window.close(),
-        Err(err) => show_error(status, &format!("Could not launch {}: {err}", app.name)),
+        Ok(()) => {
+            debug!("launch succeeded: {}", app.name);
+            window.close();
+        }
+        Err(err) => {
+            error!("could not launch {}: {err}", app.name);
+            show_error(status, &format!("Could not launch {}: {err}", app.name));
+        }
     }
 }
 
-fn move_selection(list: &gtk::ListBox, direction: i32) {
+fn move_selection(list: &gtk::ListBox, scroller: &gtk::ScrolledWindow, direction: i32) {
     let current = list.selected_row().map(|row| row.index()).unwrap_or(0);
     let next = (current + direction).max(0);
 
     if let Some(row) = list.row_at_index(next) {
         list.select_row(Some(&row));
+        keep_row_visible(list, scroller, &row);
+    }
+}
+
+fn keep_row_visible(list: &gtk::ListBox, scroller: &gtk::ScrolledWindow, row: &gtk::ListBoxRow) {
+    let Some(bounds) = row.compute_bounds(list) else {
+        return;
+    };
+
+    let adjustment = scroller.vadjustment();
+    let top = bounds.y() as f64;
+    let bottom = top + bounds.height() as f64;
+    let viewport_top = adjustment.value();
+    let viewport_bottom = viewport_top + adjustment.page_size();
+
+    if top < viewport_top {
+        adjustment.set_value(top.max(adjustment.lower()));
+    } else if bottom > viewport_bottom {
+        let target = bottom - adjustment.page_size();
+        adjustment.set_value(target.min(adjustment.upper() - adjustment.page_size()));
     }
 }
 
@@ -298,46 +385,88 @@ fn install_css() {
     provider.load_from_data(
         "
         window {
-            background: #242424;
-            border: 1px solid #5d5d5d;
-        }
-
-        entry {
-            min-height: 42px;
-            font-size: 20px;
-            padding: 6px 10px;
-        }
-
-        list {
             background: transparent;
         }
 
-        row {
-            min-height: 46px;
-            padding: 4px 8px;
+        .launcher-shell {
+            background: #24262a;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 16px;
         }
 
-        row:selected {
-            background: #3f6f8f;
+        .search-entry {
+            min-height: 54px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: #303238;
+            color: #f7f2ea;
+            font-size: 21px;
+            padding: 6px 14px;
+        }
+
+        .search-entry:focus {
+            border-color: #d3a03c;
+            box-shadow: 0 0 0 2px rgba(211, 160, 60, 0.24);
+        }
+
+        .results-scroller {
+            min-height: 356px;
+            background: transparent;
+            border: none;
+        }
+
+        scrollbar slider {
+            min-width: 8px;
+            min-height: 8px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .results-list {
+            background: transparent;
+        }
+
+        .result-list-row {
+            min-height: 58px;
+            margin: 1px 0;
+            padding: 0;
+            border-radius: 10px;
+            background: transparent;
+        }
+
+        .result-list-row:selected {
+            background: #375f73;
         }
 
         .result-row {
-            padding: 3px 0;
+            padding: 9px 12px;
         }
 
         .result-name {
-            font-size: 15px;
+            color: #f7f2ea;
+            font-size: 16px;
+            font-weight: 600;
         }
 
         .result-detail {
-            color: #b8b8b8;
-            font-size: 12px;
+            color: #aeb4bd;
+            font-size: 13px;
+        }
+
+        .result-list-row:selected .result-detail {
+            color: #d9edf5;
+        }
+
+        .empty-state {
+            color: #aeb4bd;
+            font-size: 14px;
+            padding: 2px 4px 0;
         }
 
         .error-status {
-            color: #ffb4a8;
+            color: #ffb7a8;
             font-size: 13px;
-            padding: 0 4px;
+            padding: 0 6px;
         }
         ",
     );
