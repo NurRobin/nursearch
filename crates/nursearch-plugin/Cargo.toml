@@ -1,0 +1,11 @@
+[package]
+name = "nursearch-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SDK for writing NurSearch plugins in Rust"
+
+[dependencies]
+nursearch-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true

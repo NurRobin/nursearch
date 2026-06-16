@@ -1,0 +1,15 @@
+id = "com.example.myplugin"
+name = "My Plugin"
+description = "Describe what your plugin does"
+version = "0.1.0"
+author = "you"
+license = "MIT"
+icon = "applications-other"
+protocol_version = 1
+# Point at your built binary (absolute path, or relative to this directory).
+entry = ["./my-plugin"]
+capabilities = []
+
+[activation]
+mode = "keyword"
+keyword = "x"

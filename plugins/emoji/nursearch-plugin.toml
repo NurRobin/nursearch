@@ -1,0 +1,14 @@
+id = "dev.nursearch.emoji"
+name = "Emoji Picker"
+description = "Search emoji by name and copy to clipboard"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "face-smile"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-emoji"]
+capabilities = ["clipboard"]
+
+[activation]
+mode = "keyword"
+keyword = "e"

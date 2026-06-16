@@ -1,0 +1,146 @@
+/* NurSearch theme.
+ *
+ * This file is copied to ~/.config/nursearch/style.css on first run. Edit that
+ * copy to customize the launcher; changes apply live. The built-in version here
+ * is always loaded as a base, so deleting a rule in your copy reverts it.
+ *
+ * Palette: warm charcoal surface with a single gold accent. */
+
+window {
+    background: transparent;
+}
+
+/* Fade the panel in when it appears. */
+@keyframes launcher-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.launcher-shell {
+    background: #1b1c20;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    animation: launcher-in 130ms ease-out;
+}
+
+.search-entry {
+    min-height: 54px;
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #26282d;
+    color: #f4efe6;
+    font-size: 21px;
+    padding: 6px 14px;
+    caret-color: #e0a64a;
+}
+
+.search-entry:focus {
+    border-color: #e0a64a;
+    box-shadow: 0 0 0 2px rgba(224, 166, 74, 0.22);
+}
+
+.search-entry image {
+    color: #8e949d;
+}
+
+.results-scroller {
+    min-height: 340px;
+    background: transparent;
+    border: none;
+}
+
+scrollbar slider {
+    min-width: 7px;
+    min-height: 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+}
+
+scrollbar slider:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.results-list {
+    background: transparent;
+}
+
+.result-list-row {
+    min-height: 58px;
+    margin: 1px 0;
+    padding: 0;
+    border-radius: 11px;
+    background: transparent;
+    /* Accent bar drawn via a left border that stays invisible until selected. */
+    border-left: 3px solid transparent;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.result-list-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.result-list-row:selected {
+    background: rgba(224, 166, 74, 0.14);
+    border-left-color: #e0a64a;
+}
+
+.result-row {
+    padding: 9px 12px;
+}
+
+.result-name {
+    color: #f4efe6;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.result-detail {
+    color: #8e949d;
+    font-size: 13px;
+}
+
+.result-list-row:selected .result-name {
+    color: #fbf6ec;
+}
+
+.result-list-row:selected .result-detail {
+    color: #d8c39a;
+}
+
+/* Small category pill on the right of a row (e.g. "=", "System"). */
+.result-badge {
+    color: #e0a64a;
+    background: rgba(224, 166, 74, 0.14);
+    border-radius: 7px;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.empty-state {
+    color: #8e949d;
+    font-size: 14px;
+    padding: 2px 4px 0;
+}
+
+.error-status {
+    color: #ff9d8a;
+    font-size: 13px;
+    padding: 0 6px;
+}
+
+/* Footer with keyboard hints. */
+.hint-bar {
+    padding: 4px 6px 2px 8px;
+}
+
+.hint-item {
+    color: #6f757e;
+    font-size: 12px;
+}
+
+.hint-key {
+    color: #aab0b9;
+    font-weight: 700;
+}

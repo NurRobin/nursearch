@@ -1,0 +1,15 @@
+id = "dev.nursearch.demo"
+name = "Demo"
+description = "Reference plugin: list, detail, and copy actions"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "applications-other"
+protocol_version = 1
+# Resolved against this plugin directory's parent (workspace target) at dev time.
+entry = ["../../target/debug/nursearch-demo"]
+capabilities = ["clipboard"]
+
+[activation]
+mode = "keyword"
+keyword = "demo"

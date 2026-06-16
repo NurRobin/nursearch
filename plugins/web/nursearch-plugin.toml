@@ -1,0 +1,14 @@
+id = "dev.nursearch.web"
+name = "Web Search"
+description = "Search the web via Google, DuckDuckGo, or Wikipedia"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "web-browser"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-web"]
+capabilities = ["open"]
+
+[activation]
+mode = "keyword"
+keyword = "g"

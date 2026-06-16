@@ -86,11 +86,11 @@ pub fn discover_apps() -> Vec<DesktopEntry> {
         }
     }
 
-    apps.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    apps.sort_by_key(|app| app.name.to_lowercase());
     apps
 }
 
-fn application_dirs() -> Vec<PathBuf> {
+pub(crate) fn application_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![
         PathBuf::from("/usr/share/applications"),
         PathBuf::from("/usr/local/share/applications"),
@@ -254,15 +254,15 @@ fn localized_value(values: &HashMap<Option<String>, String>) -> Option<String> {
         .unwrap_or("");
     let language_prefix = language.split('_').next().unwrap_or("");
 
-    if !language.is_empty() {
-        if let Some(value) = values.get(&Some(language.to_string())) {
-            return Some(value.clone());
-        }
+    if !language.is_empty()
+        && let Some(value) = values.get(&Some(language.to_string()))
+    {
+        return Some(value.clone());
     }
-    if !language_prefix.is_empty() {
-        if let Some(value) = values.get(&Some(language_prefix.to_string())) {
-            return Some(value.clone());
-        }
+    if !language_prefix.is_empty()
+        && let Some(value) = values.get(&Some(language_prefix.to_string()))
+    {
+        return Some(value.clone());
     }
 
     values.get(&None).cloned()

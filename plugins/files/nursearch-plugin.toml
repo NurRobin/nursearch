@@ -1,0 +1,14 @@
+id = "dev.nursearch.files"
+name = "File Search"
+description = "Search files in your home directory (prefers fd, falls back to find)"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "system-file-manager"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-files"]
+capabilities = ["open"]
+
+[activation]
+mode = "keyword"
+keyword = "f"

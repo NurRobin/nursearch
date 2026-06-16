@@ -1,1 +1,3 @@
 /target/
+templates/*/target/
+templates/*/Cargo.lock

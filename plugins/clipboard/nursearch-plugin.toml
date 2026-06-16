@@ -1,0 +1,14 @@
+id = "dev.nursearch.clipboard"
+name = "Clipboard History"
+description = "Reboot-safe clipboard history (requires wl-clipboard)"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "edit-paste"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-clipboard"]
+capabilities = ["clipboard", "storage"]
+
+[activation]
+mode = "keyword"
+keyword = "c"

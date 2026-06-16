@@ -1,0 +1,14 @@
+[package]
+name = "nursearch-clipboard-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nursearch-clipboard"
+path = "src/main.rs"
+
+[dependencies]
+nursearch-plugin = { path = "../../crates/nursearch-plugin" }
+nursearch-proto.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "nursearch-pm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "NurSearch plugin manager CLI"
+
+[[bin]]
+name = "nursearch-plugins"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+tempfile = "3"
+toml = "0.8"

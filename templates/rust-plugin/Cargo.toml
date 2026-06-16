@@ -1,0 +1,16 @@
+# Standalone template: its own [workspace] so it does not join the repo's.
+[workspace]
+
+[package]
+name = "my-nursearch-plugin"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "my-plugin"
+path = "src/main.rs"
+
+[dependencies]
+# In your own project, depend on the published crates instead of these paths.
+nursearch-plugin = { path = "../../crates/nursearch-plugin" }
+nursearch-proto = { path = "../../crates/nursearch-proto" }

@@ -8,15 +8,28 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 
 ## Features
 
-- Undecorated GTK4 search window
+- Undecorated GTK4 search window with a gold-accent theme and keyboard hint bar
 - Discovers visible `.desktop` applications from common system and user application directories
 - Fuzzy app search with exact, prefix, substring, character-order, keyword, generic-name, and
   comment matching
+- Inline calculator: type an expression (e.g. `2 + 3 * 4`); `Enter` copies the result
+- Built-in system actions: lock, log out, suspend, reboot, shut down (matched by keyword)
 - Launch with `Enter` or by activating a selected result row
-- `Escape` closes the launcher
+- `Escape` hides the launcher
 - Up/down arrow navigation
 - Local SQLite launch history at `~/.local/share/nursearch/history.sqlite`
 - Global usage ranking and query-specific learning
+- Live reload: the app list updates automatically when `.desktop` files change
+- Daemon mode: the first launch stays resident; later invocations reopen instantly
+- Themeable via `~/.config/nursearch/style.css` with live reload on save
+- Localized UI: English by default, German when the session locale starts with `de`
+- Plugin platform: a fast built-in core (apps, calculator, system) plus a
+  plugin protocol with push-view sessions, per-plugin persistent storage, and a
+  Rust SDK. Bundled plugins: clipboard history, emoji picker, web search, file
+  search, and a KDE window switcher. Manage them with the `nursearch-plugins`
+  CLI (`list` / `install <path|git-url>` / `remove <id>`). See
+  [docs/PLUGINS.md](docs/PLUGINS.md) and the
+  [agent authoring guide](docs/AGENTS-PLUGIN-GUIDE.md)
 
 ## Dependencies
 
@@ -94,9 +107,16 @@ and `Keywords`.
 App launching is delegated to GLib/GIO's desktop app launcher when possible, with a local fallback
 for parsed `Exec` commands.
 
+## Theming
+
+On first run NurSearch writes its default stylesheet to `~/.config/nursearch/style.css`. Edit that
+file to recolor or restyle the launcher; changes are applied live without restarting. The built-in
+stylesheet is always loaded as a base, so removing a rule from your copy reverts it to the default.
+
 ## Known Limitations
 
 - Desktop-file parsing covers common launcher fields but does not fully implement every part of the
   freedesktop.org Desktop Entry Specification.
-- Results are refreshed from an in-memory app list loaded at startup.
-- There is no daemon mode or global hotkey registration; KDE owns the shortcut binding.
+- There is no global hotkey registration; KDE owns the shortcut binding.
+- The `Abmelden` (log out) action targets KDE Plasma via `qdbus`; other actions use
+  `systemctl`/`loginctl`.

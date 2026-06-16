@@ -1,0 +1,13 @@
+[package]
+name = "nursearch-demo-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nursearch-demo"
+path = "src/main.rs"
+
+[dependencies]
+nursearch-plugin = { path = "../../crates/nursearch-plugin" }
+nursearch-proto.workspace = true

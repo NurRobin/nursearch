@@ -1,0 +1,14 @@
+id = "dev.nursearch.windows"
+name = "Window Switcher"
+description = "Search and focus open windows on KDE Plasma Wayland (requires kdotool)"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "preferences-system-windows"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-windows"]
+capabilities = []
+
+[activation]
+mode = "keyword"
+keyword = "w"

@@ -73,28 +73,23 @@ fn launch_exec(app: &DesktopEntry) -> io::Result<()> {
         }
     };
     debug!("parsed Exec command for {}: {:?}", app.name, args);
+    run_command(&args)
+}
 
+/// Spawn a detached command, discarding its standard streams. Shared by the
+/// desktop-entry Exec fallback and by built-in system actions.
+pub fn run_command<S: AsRef<str>>(args: &[S]) -> io::Result<()> {
     let Some((program, rest)) = args.split_first() else {
-        error!("desktop entry has empty Exec command: {}", app.name);
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "desktop entry has an empty Exec command",
-        ));
+        error!("cannot run an empty command");
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty command"));
     };
+    let program = program.as_ref();
+    let rest: Vec<&str> = rest.iter().map(AsRef::as_ref).collect();
 
-    info!(
-        "using Exec launcher: name={}, desktop_file={}, program={:?}",
-        app.name,
-        app.path.display(),
-        program
-    );
-    debug!(
-        "spawning fallback command: program={:?}, args={:?}",
-        program, rest
-    );
+    debug!("spawning command: program={program:?}, args={rest:?}");
     let mut command = Command::new(program);
     command
-        .args(rest)
+        .args(&rest)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -102,19 +97,11 @@ fn launch_exec(app: &DesktopEntry) -> io::Result<()> {
 
     match command.spawn() {
         Ok(child) => {
-            info!(
-                "fallback command spawned: name={}, pid={}, program={:?}",
-                app.name,
-                child.id(),
-                program
-            );
+            info!("command spawned: pid={}, program={program:?}", child.id());
             Ok(())
         }
         Err(err) => {
-            error!(
-                "fallback command failed: name={}, program={:?}, args={:?}, error={err}",
-                app.name, program, rest
-            );
+            error!("command failed: program={program:?}, args={rest:?}, error={err}");
             Err(err)
         }
     }

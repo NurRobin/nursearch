@@ -1,0 +1,16 @@
+[package]
+name = "nursearch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nursearch-proto.workspace = true
+env_logger = "0.11"
+gtk4 = "0.10"
+log.workspace = true
+rusqlite = "0.37"
+serde.workspace = true
+serde_json.workspace = true
+shell-words = "1.1"
+toml = "0.8"
