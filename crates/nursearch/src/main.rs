@@ -358,6 +358,10 @@ fn build_ui(app: &gtk::Application) -> Option<Launcher> {
     }
 
     let entry_key_controller = gtk::EventControllerKey::new();
+    // Capture phase: the Entry's internal GtkText consumes Return during the
+    // target/bubble pass, so a default (bubble) controller never sees it while
+    // the text field has focus. Capturing runs ancestor-first, before GtkText.
+    entry_key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
     {
         let ui = ui.clone();
         entry_key_controller.connect_key_pressed(move |_, key, _, modifiers| match key {
