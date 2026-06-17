@@ -149,6 +149,7 @@ pub fn plugin_dirs() -> Vec<PathBuf> {
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     dirs.push(PathBuf::from(home).join(".local/share/nursearch/plugins"));
+    dirs.push(PathBuf::from("/usr/share/nursearch/plugins"));
     dirs
 }
 

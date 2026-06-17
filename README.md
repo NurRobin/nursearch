@@ -78,6 +78,18 @@ Exec=nursearch
 
 Make sure `~/.local/bin` is in your desktop session's `PATH`.
 
+## Releases
+
+Version tags publish the Arch package to the AUR:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The GitHub repository needs an `AUR_SSH_PRIVATE_KEY` secret for an SSH key that
+is registered with the AUR account allowed to push `nursearch.git`.
+
 ## KDE Shortcut Setup
 
 To bind NurSearch to `Meta+Space` in KDE Plasma:

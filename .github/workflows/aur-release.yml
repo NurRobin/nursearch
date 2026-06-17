@@ -1,0 +1,85 @@
+name: AUR release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release without leading v, e.g. 0.2.0'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install tools
+        run: |
+          pacman -Syu --noconfirm curl git openssh rust
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ github.event.inputs.version }}"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+([.][0-9]+)*([._+~-][A-Za-z0-9]+)*$ ]]; then
+            echo "Invalid version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp packaging/aur/PKGBUILD /tmp/PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" /tmp/PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" /tmp/PKGBUILD
+          archive_url="https://github.com/NurRobin/nursearch/archive/refs/tags/v${{ steps.version.outputs.version }}.tar.gz"
+          checksum="$(curl -fsSL "$archive_url" | sha256sum | awk '{print $1}')"
+          sed -i "s/^sha256sums=.*/sha256sums=('$checksum')/" /tmp/PKGBUILD
+
+      - name: Generate .SRCINFO
+        shell: bash
+        run: |
+          set -euo pipefail
+          useradd -m builder
+          install -Dm644 /tmp/PKGBUILD /home/builder/pkg/PKGBUILD
+          chown -R builder:builder /home/builder/pkg
+          su builder -c 'cd /home/builder/pkg && makepkg --printsrcinfo > .SRCINFO'
+
+      - name: Publish to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$AUR_SSH_PRIVATE_KEY"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+
+          git config --global user.name 'NurSearch release bot'
+          git config --global user.email 'aur-release@users.noreply.github.com'
+
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes' \
+            git clone ssh://aur@aur.archlinux.org/nursearch.git /tmp/aur-nursearch
+          cp /home/builder/pkg/PKGBUILD /home/builder/pkg/.SRCINFO /tmp/aur-nursearch/
+          cd /tmp/aur-nursearch
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to ${{ steps.version.outputs.version }}" || exit 0
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes' git push
