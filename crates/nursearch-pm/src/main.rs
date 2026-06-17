@@ -125,7 +125,10 @@ fn cmd_install(source: &str) -> Result<(), String> {
     // A failed copy leaves nothing discoverable under the plugin directory.
     let root = plugin_dir();
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    let staging_root = root.parent().map(Path::to_path_buf).unwrap_or_else(|| root.clone());
+    let staging_root = root
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| root.clone());
     std::fs::create_dir_all(&staging_root).map_err(|e| e.to_string())?;
     let staging = staging_root.join(format!(".nursearch-install-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&staging);
@@ -141,7 +144,12 @@ fn cmd_install(source: &str) -> Result<(), String> {
         return Err(format!("could not finalize install: {err}"));
     }
 
-    println!("Installed '{}' ({}) to {}", manifest.name, manifest.id, dest.display());
+    println!(
+        "Installed '{}' ({}) to {}",
+        manifest.name,
+        manifest.id,
+        dest.display()
+    );
     Ok(())
 }
 
@@ -165,7 +173,9 @@ fn safe_dest(id: &str) -> Result<PathBuf, String> {
     let dest = root.join(id);
     // Defense in depth: the joined path must stay within the plugin directory.
     if !dest.starts_with(&root) {
-        return Err(format!("refusing plugin id '{id}' that escapes the plugin directory"));
+        return Err(format!(
+            "refusing plugin id '{id}' that escapes the plugin directory"
+        ));
     }
     Ok(dest)
 }
@@ -182,7 +192,8 @@ fn is_valid_id(id: &str) -> bool {
         return false;
     }
     let mut components = Path::new(id).components();
-    matches!(components.next(), Some(std::path::Component::Normal(_))) && components.next().is_none()
+    matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none()
 }
 
 #[cfg(test)]
@@ -197,7 +208,9 @@ mod tests {
 
     #[test]
     fn rejects_traversal_and_unsafe_ids() {
-        for bad in ["", ".", "..", "../evil", "a/b", "/abs", ".hidden", "a\\b", "a\0b", "x/../y"] {
+        for bad in [
+            "", ".", "..", "../evil", "a/b", "/abs", ".hidden", "a\\b", "a\0b", "x/../y",
+        ] {
             assert!(!is_valid_id(bad), "should reject {bad:?}");
         }
     }

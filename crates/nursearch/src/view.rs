@@ -238,9 +238,10 @@ fn build_field(field: &Field, row: &gtk::Box) -> FieldWidget {
             let labels: Vec<&str> = field.options.iter().map(|o| o.label.as_str()).collect();
             let dropdown = gtk::DropDown::from_strings(&labels);
             if let Some(value) = field.value.as_deref()
-                && let Some(index) = values.iter().position(|v| v == value) {
-                    dropdown.set_selected(index as u32);
-                }
+                && let Some(index) = values.iter().position(|v| v == value)
+            {
+                dropdown.set_selected(index as u32);
+            }
             row.append(&dropdown);
             FieldWidget::Select(dropdown, values)
         }

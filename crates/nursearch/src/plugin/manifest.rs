@@ -20,13 +20,10 @@ impl Plugin {
     pub fn launch_argv(&self) -> Vec<String> {
         self.manifest.entry.clone()
     }
-
-    pub fn id(&self) -> &str {
-        &self.manifest.id
-    }
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)]
 pub struct Manifest {
     pub id: String,
     pub name: String,
@@ -52,6 +49,7 @@ pub struct Manifest {
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
+#[allow(dead_code)]
 pub struct Activation {
     #[serde(default)]
     pub mode: ActivationMode,
@@ -71,6 +69,7 @@ pub enum ActivationMode {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)]
 pub struct Preference {
     pub id: String,
     #[serde(rename = "type")]

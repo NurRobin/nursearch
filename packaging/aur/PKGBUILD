@@ -1,6 +1,6 @@
 # Maintainer: Robin <NurRobin@users.noreply.github.com>
 pkgname=nursearch
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc='Small local GTK4 app launcher with a plugin platform'
 arch=('x86_64')

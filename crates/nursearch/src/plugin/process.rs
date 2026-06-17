@@ -19,7 +19,6 @@ pub type OnMessage = Rc<dyn Fn(&str, PluginMessage)>;
 pub type OnExit = Rc<dyn Fn(&str)>;
 
 pub struct PluginProcess {
-    id: String,
     subprocess: gio::Subprocess,
     stdin: gio::OutputStream,
     alive: Rc<Cell<bool>>,
@@ -61,19 +60,10 @@ impl PluginProcess {
         );
 
         Ok(Self {
-            id: id.to_string(),
             subprocess,
             stdin,
             alive,
         })
-    }
-
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.alive.get()
     }
 
     /// Send a message to the plugin. Returns an error if encoding or the write
@@ -194,9 +184,8 @@ for line in sys.stdin:
             let on_error = Rc::new(|_id: &str| {});
 
             let argv = vec!["python3".to_string(), "main.py".to_string()];
-            let process =
-                PluginProcess::spawn("test", &argv, &dir, on_message, on_exit, on_error)
-                    .expect("spawn plugin");
+            let process = PluginProcess::spawn("test", &argv, &dir, on_message, on_exit, on_error)
+                .expect("spawn plugin");
             process
                 .send(&HostMessage::Initialize {
                     protocol_version: PROTOCOL_VERSION,
@@ -270,9 +259,15 @@ for line in sys.stdin:
             let on_error = Rc::new(|_id: &str| {});
 
             let argv = vec![binary.to_string_lossy().into_owned()];
-            let process =
-                PluginProcess::spawn("demo", &argv, &std::env::temp_dir(), on_message, on_exit, on_error)
-                    .expect("spawn demo plugin");
+            let process = PluginProcess::spawn(
+                "demo",
+                &argv,
+                &std::env::temp_dir(),
+                on_message,
+                on_exit,
+                on_error,
+            )
+            .expect("spawn demo plugin");
             for message in [
                 HostMessage::Initialize {
                     protocol_version: PROTOCOL_VERSION,

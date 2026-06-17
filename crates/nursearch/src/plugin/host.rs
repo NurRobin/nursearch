@@ -29,7 +29,6 @@ pub trait HostSink {
 
 struct Running {
     process: PluginProcess,
-    manifest: Manifest,
     ready: bool,
 }
 
@@ -182,7 +181,6 @@ impl PluginHost {
                     id_owned,
                     Running {
                         process,
-                        manifest: plugin.manifest,
                         ready: false,
                     },
                 );
@@ -210,14 +208,6 @@ impl PluginHost {
                 }
             },
             None => false,
-        }
-    }
-
-    /// Gracefully ask every running plugin to shut down.
-    pub fn shutdown_all(&self) {
-        let inner = self.inner.borrow();
-        for running in inner.running.values() {
-            let _ = running.process.send(&HostMessage::Shutdown);
         }
     }
 }
@@ -298,9 +288,10 @@ fn handle_message(weak: &Weak<RefCell<HostInner>>, plugin_id: &str, message: Plu
             let outcome = sink.host_call(plugin_id, call);
             let reply = HostMessage::HostResult { id, outcome };
             if let Some(running) = inner_rc.borrow().running.get(plugin_id)
-                && let Err(err) = running.process.send(&reply) {
-                    log::warn!("could not reply to host call from '{plugin_id}': {err}");
-                }
+                && let Err(err) = running.process.send(&reply)
+            {
+                log::warn!("could not reply to host call from '{plugin_id}': {err}");
+            }
         }
         PluginMessage::Log { level, message } => {
             log::info!("[plugin {plugin_id}] {level}: {message}");

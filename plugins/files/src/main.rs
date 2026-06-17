@@ -86,13 +86,7 @@ fn search(needle: &str) -> Vec<String> {
 
     run_lines(
         "find",
-        &[
-            &home(),
-            "-type",
-            "f",
-            "-iname",
-            &format!("*{needle}*"),
-        ],
+        &[&home(), "-type", "f", "-iname", &format!("*{needle}*")],
     )
     .map(|mut lines| {
         lines.truncate(MAX_RESULTS);

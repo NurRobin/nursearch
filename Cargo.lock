@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "env_logger",
  "gtk4",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-clipboard-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-demo-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-emoji-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-files-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-proto",
  "serde",
@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-pm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "tempfile",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-proto"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -729,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-web-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -737,7 +737,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-windows-plugin"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",

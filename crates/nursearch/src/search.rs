@@ -80,6 +80,7 @@ pub struct SearchResult {
 }
 
 /// Build the ranked result list for a query across all providers.
+#[cfg(test)]
 pub fn search(apps: &[DesktopEntry], query: &str, snapshot: &StatsSnapshot) -> Vec<SearchResult> {
     finalize(core_results(apps, query, snapshot))
 }
