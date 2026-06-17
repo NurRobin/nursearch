@@ -406,6 +406,16 @@ fn build_ui(app: &gtk::Application) -> Option<Launcher> {
     }
     window.add_controller(key_controller);
 
+    // Dismiss the launcher when it loses focus: clicking another window or
+    // tabbing away hides it, matching standard launcher behaviour. The window
+    // becomes inactive the moment focus leaves it, so re-showing (which calls
+    // `present` + `grab_focus`) re-activates it without re-triggering this.
+    window.connect_is_active_notify(move |window| {
+        if !window.is_active() {
+            window.set_visible(false);
+        }
+    });
+
     state.borrow_mut()._dir_monitors = watch_app_dirs(&state, &entry, &list, &empty);
 
     window.present();
