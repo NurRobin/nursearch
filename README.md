@@ -83,8 +83,8 @@ Make sure `~/.local/bin` is in your desktop session's `PATH`.
 Version tags publish the Arch package to the AUR:
 
 ```sh
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
 The GitHub repository needs an `AUR_SSH_PRIVATE_KEY` secret for an SSH key that
