@@ -357,6 +357,19 @@ fn build_ui(app: &gtk::Application) -> Option<Launcher> {
         });
     }
 
+    let entry_key_controller = gtk::EventControllerKey::new();
+    {
+        let ui = ui.clone();
+        entry_key_controller.connect_key_pressed(move |_, key, _, modifiers| match key {
+            gdk::Key::Return | gdk::Key::KP_Enter => {
+                activate_primary(&ui, modifiers);
+                glib::Propagation::Stop
+            }
+            _ => glib::Propagation::Proceed,
+        });
+    }
+    entry.add_controller(entry_key_controller);
+
     let key_controller = gtk::EventControllerKey::new();
     {
         let ui = ui.clone();
@@ -380,11 +393,7 @@ fn build_ui(app: &gtk::Application) -> Option<Launcher> {
                     glib::Propagation::Stop
                 }
                 gdk::Key::Return | gdk::Key::KP_Enter => {
-                    if modifiers.contains(gdk::ModifierType::ALT_MASK) {
-                        open_action_menu(&ui);
-                    } else {
-                        activate_current(&ui);
-                    }
+                    activate_primary(&ui, modifiers);
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,
@@ -1087,6 +1096,14 @@ fn activate_current(ui: &Ui) {
             &ui.window,
             &ui.status,
         );
+    }
+}
+
+fn activate_primary(ui: &Ui, modifiers: gdk::ModifierType) {
+    if modifiers.contains(gdk::ModifierType::ALT_MASK) {
+        open_action_menu(ui);
+    } else {
+        activate_current(ui);
     }
 }
 
