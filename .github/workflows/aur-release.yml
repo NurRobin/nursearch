@@ -72,14 +72,18 @@ jobs:
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
           git config --global user.name 'NurSearch release bot'
           git config --global user.email 'aur-release@users.noreply.github.com'
 
-          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes' \
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          $GIT_SSH_COMMAND -T aur@aur.archlinux.org help >/dev/null
+
+          GIT_SSH_COMMAND="$GIT_SSH_COMMAND" \
             git clone ssh://aur@aur.archlinux.org/nursearch.git /tmp/aur-nursearch
           cp /home/builder/pkg/PKGBUILD /home/builder/pkg/.SRCINFO /tmp/aur-nursearch/
           cd /tmp/aur-nursearch
           git add PKGBUILD .SRCINFO
           git commit -m "Update to ${{ steps.version.outputs.version }}" || exit 0
-          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes' git push
+          GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git push
