@@ -165,6 +165,20 @@ fn main() -> glib::ExitCode {
     init_logging();
     info!("starting NurSearch");
 
+    // Default to GTK's software (cairo) renderer. NurSearch only ever draws a
+    // small, mostly static launcher window, so GPU acceleration buys nothing —
+    // but the Vulkan/GL renderer makes GTK map the full GPU driver stack
+    // (on multi-GPU machines, several at once), costing ~150 MiB of resident
+    // memory at idle. Cairo cuts idle RSS by roughly two thirds. Users who want
+    // GPU rendering can still override this by exporting GSK_RENDERER themselves.
+    if std::env::var_os("GSK_RENDERER").is_none() {
+        // Safety: called at the very top of `main`, before any threads are
+        // spawned and before GTK initializes its renderer.
+        unsafe {
+            std::env::set_var("GSK_RENDERER", "cairo");
+        }
+    }
+
     let app = gtk::Application::builder().application_id(APP_ID).build();
 
     // The process stays resident as a daemon: the first invocation builds the
