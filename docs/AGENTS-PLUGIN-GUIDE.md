@@ -92,7 +92,10 @@ Activating it sends `activate` with its `commandId`.
 
 - `{"do":"plugin"}` — re-enters you via an `action` event (default)
 - `{"do":"copy","text":"…"}` — host copies to clipboard, then closes
-- `{"do":"openUrl","url":"…"}` / `{"do":"run","argv":["…"]}` / `{"do":"paste","text":"…"}` / `{"do":"close"}`
+- `{"do":"openUrl","url":"…"}` / `{"do":"run","argv":["…"]}` / `{"do":"close"}`
+- `{"do":"paste","text":"…"}` — copies to clipboard, closes, then types the
+  paste shortcut into the previously focused window (needs `wtype`, `ydotool`,
+  or `xdotool`; falls back to a plain copy if none is installed)
 
 The first action is the primary one (Enter); the rest appear in the Alt+Enter menu.
 

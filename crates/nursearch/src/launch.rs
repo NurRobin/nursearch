@@ -117,8 +117,44 @@ fn run_via_systemd(args: &[String]) -> io::Result<()> {
         info!("launched via systemd-run: {args:?}");
         Ok(())
     } else {
-        Err(io::Error::other(format!("systemd-run exited with {status}")))
+        Err(io::Error::other(format!(
+            "systemd-run exited with {status}"
+        )))
     }
+}
+
+/// Synthesize a `Ctrl+V` paste into whatever window currently holds focus.
+///
+/// The text has already been placed on the clipboard by the caller, which then
+/// hides the launcher so focus returns to the previous window; this presses the
+/// paste shortcut there. It tries the input-synthesis tools commonly available
+/// on Wayland and X11 in turn and uses the first one that is installed. This is
+/// best-effort: if none is present the user can still paste manually, so a
+/// missing tool is reported but not fatal.
+pub fn paste_into_focused() -> io::Result<()> {
+    // Most-preferred first: wtype (Wayland), ydotool (Wayland, uinput),
+    // xdotool (X11/XWayland). ydotool uses Linux input keycodes (29 = LeftCtrl,
+    // 47 = V) as `code:state` press/release pairs.
+    let candidates: [&[&str]; 3] = [
+        &["wtype", "-M", "ctrl", "-k", "v", "-m", "ctrl"],
+        &["ydotool", "key", "29:1", "47:1", "47:0", "29:0"],
+        &["xdotool", "key", "--clearmodifiers", "ctrl+v"],
+    ];
+
+    let mut last_err = None;
+    for argv in candidates {
+        // A missing binary fails synchronously at spawn (ENOENT), so a spawn
+        // error means "tool not installed" — fall through and try the next one.
+        match run_command(argv) {
+            Ok(()) => {
+                debug!("synthesized paste via {:?}", argv[0]);
+                return Ok(());
+            }
+            Err(err) => last_err = Some(err),
+        }
+    }
+    Err(last_err
+        .unwrap_or_else(|| io::Error::other("no paste tool (wtype/ydotool/xdotool) available")))
 }
 
 /// Spawn a detached command, discarding its standard streams. Shared by the

@@ -115,6 +115,15 @@ pub fn warn_history_memory(err: &str) -> String {
     }
 }
 
+/// User-facing error when a host-handled plugin action (open URL, run command)
+/// could not be carried out.
+pub fn error_action(err: &str) -> String {
+    match lang() {
+        Lang::En => format!("Action failed: {err}"),
+        Lang::De => format!("Aktion fehlgeschlagen: {err}"),
+    }
+}
+
 /// User-facing notice when an action is blocked for lacking a capability.
 pub fn error_capability(capability: &str) -> String {
     match lang() {

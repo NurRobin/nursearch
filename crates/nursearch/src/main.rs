@@ -10,7 +10,7 @@ mod search;
 mod system;
 mod view;
 
-use db::HistoryDb;
+use db::{HistoryDb, StatsSnapshot};
 use desktop::{DesktopEntry, discover_apps};
 use gtk::gdk;
 use gtk::gio;
@@ -39,6 +39,9 @@ struct AppState {
     generation: u64,
     /// Latest core results for the current generation (instant, in-process).
     core: Vec<SearchResult>,
+    /// Usage snapshot for the current root generation. Shared so async plugin
+    /// contributions get the same launch-history boost the core results do.
+    snapshot: Rc<StatsSnapshot>,
     /// Latest plugin contributions for the current generation, keyed by plugin id.
     plugin_results: HashMap<String, Vec<SearchResult>>,
     /// Plugin ids actually asked to contribute to the current root generation.
@@ -131,9 +134,10 @@ impl plugin::HostSink for Ui {
                 .and_then(|host| host.manifest(plugin_id))
                 .map(|manifest| manifest.name)
                 .unwrap_or_else(|| plugin_id.to_string());
+            let snapshot = Rc::clone(&st.snapshot);
             let converted = items
                 .into_iter()
-                .map(|item| result_from_plugin(plugin_id, &name, item))
+                .map(|item| result_from_plugin(plugin_id, &name, item, &snapshot))
                 .collect();
             st.plugin_results.insert(plugin_id.to_string(), converted);
         }
@@ -224,6 +228,7 @@ fn build_ui(app: &gtk::Application) -> Option<Launcher> {
         host: None,
         generation: 0,
         core: Vec::new(),
+        snapshot: Rc::new(StatsSnapshot::default()),
         plugin_results: HashMap::new(),
         expected_contributors: std::collections::HashSet::new(),
         session: None,
@@ -549,13 +554,16 @@ fn dispatch_query(
     let generation = {
         let mut st = state.borrow_mut();
         st.generation += 1;
+        // One snapshot per generation, shared by the core and every plugin
+        // contribution so both are ranked with the same launch history.
+        let snapshot = Rc::new(st.db.snapshot(&query));
         // A keyword takes over the root, so the core contributes nothing.
         st.core = if keyword.is_some() {
             Vec::new()
         } else {
-            let snapshot = st.db.snapshot(&query);
             core_results(&st.apps, &query, &snapshot)
         };
+        st.snapshot = snapshot;
         st.plugin_results.clear();
         // Results are only accepted from plugins in this set for this generation.
         st.expected_contributors = contributors.iter().map(|(id, _)| id.clone()).collect();
@@ -1219,26 +1227,46 @@ fn run_action(ui: &Ui, action: nursearch_proto::Action, item_id: Option<String>)
                 item_id,
             },
         ),
-        ActionKind::Copy { text } | ActionKind::Paste { text } => {
+        ActionKind::Copy { text } => {
             if !allowed("clipboard") {
                 return deny(ui, "clipboard");
             }
             ui.window.clipboard().set_text(&text);
             finish_interaction(ui);
         }
+        ActionKind::Paste { text } => {
+            if !allowed("clipboard") {
+                return deny(ui, "clipboard");
+            }
+            ui.window.clipboard().set_text(&text);
+            // Hide the launcher first so focus returns to the previous window,
+            // then synthesize the paste keystroke into it after a short delay
+            // (the compositor needs a moment to restore focus). The text is on
+            // the clipboard either way, so a missing paste tool is non-fatal.
+            finish_interaction(ui);
+            glib::timeout_add_local_once(Duration::from_millis(120), || {
+                if let Err(err) = launch::paste_into_focused() {
+                    warn!("could not synthesize paste: {err}");
+                }
+            });
+        }
         ActionKind::OpenUrl { url } => {
             if !allowed("open") {
                 return deny(ui, "open");
             }
-            let _ = launch::run_command(&["xdg-open".to_string(), url]);
-            finish_interaction(ui);
+            match launch::run_command(&["xdg-open".to_string(), url]) {
+                Ok(()) => finish_interaction(ui),
+                Err(err) => show_error(&ui.status, &i18n::error_action(&err.to_string())),
+            }
         }
         ActionKind::Run { argv } => {
             if !allowed("run") {
                 return deny(ui, "run");
             }
-            let _ = launch::run_command(&argv);
-            finish_interaction(ui);
+            match launch::run_command(&argv) {
+                Ok(()) => finish_interaction(ui),
+                Err(err) => show_error(&ui.status, &i18n::error_action(&err.to_string())),
+            }
         }
         ActionKind::Close => finish_interaction(ui),
     }

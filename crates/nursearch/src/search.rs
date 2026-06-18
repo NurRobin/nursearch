@@ -49,15 +49,24 @@ impl Kind {
     }
 }
 
-/// Convert a plugin's protocol result item into a renderable root result.
-pub fn result_from_plugin(plugin_id: &str, plugin_name: &str, item: ResultItem) -> SearchResult {
+/// Convert a plugin's protocol result item into a renderable root result,
+/// applying the same launch-history boost the core results get so a
+/// frequently-used plugin item climbs the ranking.
+pub fn result_from_plugin(
+    plugin_id: &str,
+    plugin_name: &str,
+    item: ResultItem,
+    snapshot: &StatsSnapshot,
+) -> SearchResult {
+    let history_key = format!("plugin:{plugin_id}:{}", item.id);
+    let score = item.score + usage_score(&snapshot.stats_for(&history_key));
     SearchResult {
         title: item.title,
         subtitle: item.subtitle,
         icon: item.icon,
         kind: Kind::Plugin(plugin_name.to_string()),
-        score: item.score,
-        history_key: Some(format!("plugin:{plugin_id}:{}", item.id)),
+        score,
+        history_key: Some(history_key),
         action: Action::OpenPlugin {
             plugin_id: plugin_id.to_string(),
             command_id: item.command_id,
@@ -260,6 +269,34 @@ mod tests {
 
         assert!(results.iter().any(|result| result.kind == Kind::System
             && matches!(&result.action, Action::Run(cmd) if cmd.first().map(String::as_str) == Some("loginctl"))));
+    }
+
+    #[test]
+    fn plugin_result_gets_usage_boost() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let item = ResultItem {
+            id: "abc".to_string(),
+            title: "Thing".to_string(),
+            subtitle: None,
+            icon: None,
+            score: 100,
+            command_id: "open".to_string(),
+            actions: Vec::new(),
+        };
+
+        // Cold: no history, so the score is just the plugin's own hint.
+        let cold = result_from_plugin("p", "Plugin", item.clone(), &db.snapshot("q"));
+        assert_eq!(cold.score, 100);
+
+        // After recording a launch under the item's synthetic history key for
+        // query "q", the same item ranks higher.
+        db.record_launch("q", "plugin:p:abc").unwrap();
+        let warm = result_from_plugin("p", "Plugin", item, &db.snapshot("q"));
+        assert!(
+            warm.score > 100,
+            "expected a usage boost, got {}",
+            warm.score
+        );
     }
 
     #[test]

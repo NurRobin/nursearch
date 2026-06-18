@@ -1,3 +1,4 @@
+use log::warn;
 use rusqlite::{Connection, Result, params};
 use std::collections::HashMap;
 use std::fs;
@@ -141,27 +142,36 @@ impl HistoryDb {
         let rows = stmt.query_map(params![plugin_id, pattern], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
-        Ok(rows.flatten().collect())
+        // Propagate a per-row read error instead of silently dropping the row;
+        // a plugin reading its own storage must see a failure, not a short list.
+        rows.collect()
     }
 
     /// Load all global usage plus the usage for one query in two SQL statements.
     pub fn snapshot(&self, query: &str) -> StatsSnapshot {
         let mut snapshot = StatsSnapshot::default();
-        load_counts(
+        // Ranking degrades gracefully if usage stats can't be read, but a read
+        // failure (corruption, schema drift) is logged rather than swallowed so
+        // it doesn't silently look like a cold history.
+        if let Err(err) = load_counts(
             &self.conn,
             "SELECT desktop_file, launch_count, last_used FROM app_usage",
             [],
             &mut snapshot.global,
-        );
+        ) {
+            warn!("could not load global usage stats: {err}");
+        }
 
         let normalized_query = normalize_query(query);
-        if !normalized_query.is_empty() {
-            load_counts(
+        if !normalized_query.is_empty()
+            && let Err(err) = load_counts(
                 &self.conn,
                 "SELECT desktop_file, launch_count, last_used FROM query_usage WHERE query = ?1",
                 [normalized_query.as_str()],
                 &mut snapshot.per_query,
-            );
+            )
+        {
+            warn!("could not load per-query usage stats: {err}");
         }
 
         snapshot
@@ -196,6 +206,43 @@ impl HistoryDb {
 
         Ok(())
     }
+}
+
+fn load_counts<P: rusqlite::Params>(
+    conn: &Connection,
+    sql: &str,
+    params: P,
+    target: &mut HashMap<String, (i64, i64)>,
+) -> Result<()> {
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map(params, |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (key, count, last_used) = row?;
+        target.insert(key, (count, last_used));
+    }
+    Ok(())
+}
+
+pub fn normalize_query(query: &str) -> String {
+    query.trim().to_lowercase()
+}
+
+fn data_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".local/share/nursearch")
+}
+
+fn unix_time() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -264,43 +311,4 @@ mod tests {
         let listed = db.storage_list("p", Some("a%")).unwrap();
         assert_eq!(listed, vec![("a%b".to_string(), "1".to_string())]);
     }
-}
-
-fn load_counts<P: rusqlite::Params>(
-    conn: &Connection,
-    sql: &str,
-    params: P,
-    target: &mut HashMap<String, (i64, i64)>,
-) {
-    let Ok(mut stmt) = conn.prepare(sql) else {
-        return;
-    };
-    let Ok(rows) = stmt.query_map(params, |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, i64>(2)?,
-        ))
-    }) else {
-        return;
-    };
-    for (key, count, last_used) in rows.flatten() {
-        target.insert(key, (count, last_used));
-    }
-}
-
-pub fn normalize_query(query: &str) -> String {
-    query.trim().to_lowercase()
-}
-
-fn data_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".local/share/nursearch")
-}
-
-fn unix_time() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or_default()
 }

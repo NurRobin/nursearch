@@ -196,41 +196,6 @@ fn is_valid_id(id: &str) -> bool {
         && components.next().is_none()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{copy_dir, is_valid_id};
-
-    #[test]
-    fn accepts_reverse_dns_ids() {
-        assert!(is_valid_id("dev.nursearch.demo"));
-        assert!(is_valid_id("com.example.my-plugin_2"));
-    }
-
-    #[test]
-    fn rejects_traversal_and_unsafe_ids() {
-        for bad in [
-            "", ".", "..", "../evil", "a/b", "/abs", ".hidden", "a\\b", "a\0b", "x/../y",
-        ] {
-            assert!(!is_valid_id(bad), "should reject {bad:?}");
-        }
-    }
-
-    #[test]
-    fn copy_dir_rejects_symlinks() {
-        use std::os::unix::fs::symlink;
-        let base = std::env::temp_dir().join(format!("nspm-symlink-{}", std::process::id()));
-        let src = base.join("src");
-        std::fs::create_dir_all(&src).unwrap();
-        std::fs::write(src.join("ok.txt"), "hi").unwrap();
-        symlink("/etc/hostname", src.join("evil")).unwrap();
-
-        let result = copy_dir(&src, &base.join("dst"));
-        assert!(result.is_err(), "copy_dir should refuse a symlinked source");
-
-        let _ = std::fs::remove_dir_all(&base);
-    }
-}
-
 fn is_git_url(source: &str) -> bool {
     source.starts_with("http://")
         || source.starts_with("https://")
@@ -295,4 +260,39 @@ fn plugin_dir() -> PathBuf {
         format!("{home}/.local/share")
     });
     PathBuf::from(base).join("nursearch/plugins")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{copy_dir, is_valid_id};
+
+    #[test]
+    fn accepts_reverse_dns_ids() {
+        assert!(is_valid_id("dev.nursearch.demo"));
+        assert!(is_valid_id("com.example.my-plugin_2"));
+    }
+
+    #[test]
+    fn rejects_traversal_and_unsafe_ids() {
+        for bad in [
+            "", ".", "..", "../evil", "a/b", "/abs", ".hidden", "a\\b", "a\0b", "x/../y",
+        ] {
+            assert!(!is_valid_id(bad), "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn copy_dir_rejects_symlinks() {
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!("nspm-symlink-{}", std::process::id()));
+        let src = base.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("ok.txt"), "hi").unwrap();
+        symlink("/etc/hostname", src.join("evil")).unwrap();
+
+        let result = copy_dir(&src, &base.join("dst"));
+        assert!(result.is_err(), "copy_dir should refuse a symlinked source");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

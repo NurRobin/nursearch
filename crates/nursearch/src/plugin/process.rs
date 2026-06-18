@@ -73,10 +73,17 @@ impl PluginProcess {
             return Err("plugin process is not running".to_string());
         }
         let line = encode(message).map_err(|err| format!("encode failed: {err}"))?;
-        let bytes = glib::Bytes::from_owned(line.into_bytes());
-        self.stdin
-            .write_bytes(&bytes, gio::Cancellable::NONE)
+        // `write_all` keeps writing until the whole frame is out (or it errors),
+        // unlike `write_bytes`, which may report a short write and leave a
+        // truncated JSON line for a large view/form. A partial write surfaces as
+        // the trailing `Some(err)`.
+        let (_written, partial) = self
+            .stdin
+            .write_all(line.as_bytes(), gio::Cancellable::NONE)
             .map_err(|err| format!("write failed: {err}"))?;
+        if let Some(err) = partial {
+            return Err(format!("write failed: {err}"));
+        }
         Ok(())
     }
 
