@@ -53,7 +53,7 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 On CachyOS / Arch Linux:
 
 ```sh
-sudo pacman -S --needed rustup gtk4 pkgconf
+sudo pacman -S --needed rustup gtk4 gtk4-layer-shell pkgconf
 rustup default stable
 ```
 

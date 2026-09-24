@@ -6,7 +6,7 @@ pkgdesc='Small local GTK4 app launcher with a plugin platform'
 arch=('x86_64')
 url='https://github.com/NurRobin/nursearch'
 license=('MIT')
-depends=('gtk4' 'sqlite' 'xdg-utils')
+depends=('gtk4' 'gtk4-layer-shell' 'sqlite' 'xdg-utils')
 makedepends=('cargo')
 optdepends=(
   'fd: faster file search plugin backend'
