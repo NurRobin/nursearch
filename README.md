@@ -13,7 +13,8 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 - Fuzzy app search with exact, prefix, substring, character-order, keyword, generic-name, and
   comment matching
 - Inline calculator: type an expression (e.g. `2 + 3 * 4`, `2,5 × 4`, `2^10`); `Enter` copies the
-  result. A decimal comma is answered with a comma
+  result. A decimal comma is answered with a comma. Percentages (`15% of 240`, `240 + 15%`) and unit
+  conversion (`10 km in mi`, `-40 c in f`, `1 GiB in MB`, `100 km/h in mph`) work too
 - Desktop actions: "firefox priv" or "private" offers Firefox's "New Private Window"; actions
   rank below their app
 - Direct targets: paste a URL (`https://…`, `github.com/…`) or a path (`~/Downloads`, `/etc`) and

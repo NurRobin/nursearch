@@ -227,36 +227,32 @@ pub fn try_convert(input: &str) -> Option<String> {
 }
 
 /// Find the connector word ("in"/"to"/"nach"/"zu") as a standalone token.
+/// The rightmost one wins, so the inch symbol can precede it ("10 in in cm").
 /// Returns (start, end) byte positions in the lowercased string, or None.
 fn find_connector(s_lower: &str) -> Option<(usize, usize)> {
-    for conn in &["nach", "to", "zu", "in"] {
-        let clen = conn.len();
-        let mut search_from = 0;
-        while search_from + clen <= s_lower.len() {
-            if let Some(pos) = s_lower[search_from..].find(conn) {
-                let abs = search_from + pos;
-                let end = abs + clen;
-                // Must be bounded by space/start/end.
-                let left_ok = abs == 0 || s_lower.as_bytes()[abs - 1] == b' ';
-                let right_ok = end == s_lower.len() || s_lower.as_bytes()[end] == b' ';
-                if left_ok && right_ok {
-                    return Some((abs, end));
-                }
-                search_from = abs + 1;
-            } else {
-                break;
+    let mut best: Option<(usize, usize)> = None;
+    for conn in ["nach", "to", "zu", "in"] {
+        for (abs, _) in s_lower.match_indices(conn) {
+            let end = abs + conn.len();
+            let left_ok = abs == 0 || s_lower.as_bytes()[abs - 1] == b' ';
+            let right_ok = end == s_lower.len() || s_lower.as_bytes()[end] == b' ';
+            if left_ok && right_ok && best.is_none_or(|(start, _)| abs > start) {
+                best = Some((abs, end));
             }
         }
     }
-    None
+    best
 }
 
 /// Parse `"1.5 km"` or `"10km"` into `(value, Unit, decimal_comma)`.
 fn parse_value_unit(s: &str) -> Option<(f64, Unit, bool)> {
     let s = s.trim();
     // Find where the numeric part ends.
-    // A number is: optional sign is NOT expected here (it would be part of an
-    // arithmetic expression).  Digits, one decimal point or comma, digits.
+    // A number is an optional sign, then digits with one decimal point or comma.
+    let (sign, s) = match s.strip_prefix('-') {
+        Some(rest) => (-1.0, rest.trim_start()),
+        None => (1.0, s.strip_prefix('+').unwrap_or(s).trim_start()),
+    };
     let num_end = s
         .char_indices()
         .take_while(|(_, c)| c.is_ascii_digit() || *c == '.' || *c == ',')
@@ -272,7 +268,7 @@ fn parse_value_unit(s: &str) -> Option<(f64, Unit, bool)> {
 
     let (value, decimal_comma) = parse_number(num_str)?;
     let unit = lookup(&unit_str)?;
-    Some((value, unit, decimal_comma))
+    Some((sign * value, unit, decimal_comma))
 }
 
 fn convert_value(value: f64, from: &Unit, to: &Unit) -> f64 {
@@ -398,5 +394,17 @@ mod tests {
     fn rejects_unknown_units() {
         assert_eq!(cv("10 xyz in km"), None);
         assert_eq!(cv("10 km in xyz"), None);
+    }
+
+    #[test]
+    fn negative_values_convert() {
+        assert_eq!(cv("-40 c in f"), Some("-40 °F".to_string()));
+        assert_eq!(cv("-5 m in cm"), Some("-500 cm".to_string()));
+    }
+
+    #[test]
+    fn inch_abbreviation_can_precede_the_connector() {
+        assert_eq!(cv("10 in in cm"), Some("25.4 cm".to_string()));
+        assert_eq!(cv("10 in to cm"), Some("25.4 cm".to_string()));
     }
 }
