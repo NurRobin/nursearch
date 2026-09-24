@@ -57,5 +57,6 @@ package() {
   done
 
   install -Dm644 nursearch.desktop "$pkgdir/usr/share/applications/nursearch.desktop"
+  install -Dm644 nursearch-autostart.desktop "$pkgdir/etc/xdg/autostart/nursearch.desktop"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

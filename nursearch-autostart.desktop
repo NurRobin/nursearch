@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NurSearch (background)
+Comment=Start the NurSearch launcher hidden at login so it opens instantly
+Exec=nursearch --background
+Icon=system-search
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

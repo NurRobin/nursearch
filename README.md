@@ -21,7 +21,9 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 - Local SQLite launch history at `~/.local/share/nursearch/history.sqlite`
 - Global usage ranking and query-specific learning
 - Live reload: the app list updates automatically when `.desktop` files change
-- Daemon mode: the first launch stays resident; later invocations reopen instantly
+- Daemon mode: the first launch stays resident; later invocations reopen instantly.
+  The package starts it hidden at login (`nursearch --background`), so even the first
+  open after login skips GTK's cold start
 - Themeable via `~/.config/nursearch/style.css` with live reload on save
 - Localized UI: English by default, German when the session locale starts with `de`
 - Plugin platform: a fast built-in core (apps, calculator, system) plus a
@@ -78,6 +80,13 @@ Exec=nursearch
 ```
 
 Make sure `~/.local/bin` is in your desktop session's `PATH`.
+
+To start NurSearch hidden at login (the AUR package does this system-wide):
+
+```sh
+mkdir -p ~/.config/autostart
+cp nursearch-autostart.desktop ~/.config/autostart/nursearch.desktop
+```
 
 ## Releases
 

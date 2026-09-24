@@ -183,23 +183,44 @@ fn main() -> glib::ExitCode {
         }
     }
 
+    let background = wants_background(std::env::args().skip(1));
     let app = gtk::Application::builder().application_id(APP_ID).build();
+
+    if background {
+        if let Err(err) = app.register(gio::Cancellable::NONE) {
+            error!("could not register the application: {err}");
+            return glib::ExitCode::FAILURE;
+        }
+        // A background start must never pop up an already-running launcher.
+        if app.is_remote() {
+            info!("NurSearch is already running; nothing to do");
+            return glib::ExitCode::SUCCESS;
+        }
+    }
 
     // The process stays resident as a daemon: the first invocation builds the
     // window, and every later `nursearch` call re-activates the running instance
-    // and simply re-presents it for an instant open.
+    // and simply re-presents it for an instant open. `--background` (used by
+    // the login autostart) builds it hidden, so even the first open after login
+    // skips GTK's ~300 ms cold start.
     let launcher: Rc<RefCell<Option<Launcher>>> = Rc::new(RefCell::new(None));
     app.connect_activate(move |app| {
         let mut slot = launcher.borrow_mut();
         match slot.as_ref() {
             Some(existing) => existing.show(),
-            None => *slot = build_ui(app),
+            None => *slot = build_ui(app, !background),
         }
     });
-    app.run()
+    // Our own flags are handled above; GApplication would reject them.
+    app.run_with_args(&std::env::args().take(1).collect::<Vec<_>>())
 }
 
-fn build_ui(app: &gtk::Application) -> Option<Launcher> {
+/// Whether the command line asks for a hidden start (`--background`).
+fn wants_background(mut args: impl Iterator<Item = String>) -> bool {
+    args.any(|arg| arg == "--background")
+}
+
+fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
     let apps = discover_apps();
     info!("discovered {} desktop applications", apps.len());
 
@@ -437,9 +458,13 @@ fn build_ui(app: &gtk::Application) -> Option<Launcher> {
 
     state.borrow_mut()._dir_monitors = watch_app_dirs(&state, &entry, &list, &empty);
 
-    window.present();
-    entry.grab_focus();
-    debug!("launcher window presented");
+    if present {
+        window.present();
+        entry.grab_focus();
+        debug!("launcher window presented");
+    } else {
+        info!("launcher ready in the background");
+    }
 
     debug_autodrive(&ui);
 
@@ -1393,4 +1418,17 @@ fn hint_bar() -> gtk::Box {
     }
 
     bar
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wants_background;
+
+    #[test]
+    fn background_flag_is_detected() {
+        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        assert!(wants_background(args(&["--background"]).into_iter()));
+        assert!(!wants_background(args(&[]).into_iter()));
+        assert!(!wants_background(args(&["--other"]).into_iter()));
+    }
 }
