@@ -83,17 +83,23 @@ struct Session {
 /// (GTK objects are reference counted).
 #[derive(Clone)]
 struct Launcher {
-    window: gtk::ApplicationWindow,
-    entry: gtk::Entry,
+    ui: Ui,
 }
 
 impl Launcher {
     /// Reset and bring the launcher back to the foreground (daemon re-activation).
+    /// Every open starts at an empty search root: a plugin view left open when
+    /// the launcher lost focus, and any old error message, are cleared.
     fn show(&self) {
-        self.entry.set_text("");
-        self.window.set_visible(true);
-        self.window.present();
-        self.entry.grab_focus();
+        let ui = &self.ui;
+        if ui.state.borrow().session.is_some() {
+            exit_session(ui);
+        }
+        ui.status.set_visible(false);
+        ui.entry.set_text("");
+        ui.window.set_visible(true);
+        ui.window.present();
+        ui.entry.grab_focus();
     }
 }
 
@@ -475,7 +481,7 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
 
     debug_autodrive(&ui);
 
-    Some(Launcher { window, entry })
+    Some(Launcher { ui })
 }
 
 /// Test/verification hook: with `NURSEARCH_DEBUG_QUERY` set, pre-fill the search
@@ -1331,6 +1337,12 @@ fn open_action_menu(ui: &Ui) {
 
     let popover = gtk::Popover::new();
     popover.set_parent(&ui.entry);
+    // A popover stays attached to its parent until unparented; without this
+    // every Alt+Enter would leak one for the daemon's lifetime.
+    popover.connect_closed(|popover| {
+        let popover = popover.clone();
+        glib::idle_add_local_once(move || popover.unparent());
+    });
     let list = gtk::ListBox::new();
     list.add_css_class("results-list");
 
