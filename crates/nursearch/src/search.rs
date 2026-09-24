@@ -176,7 +176,7 @@ fn system_result(
     normalized: &str,
     snapshot: &StatsSnapshot,
 ) -> Option<SearchResult> {
-    let base = crate::rank::match_score(&command.search_text(), normalized)?;
+    let base = command.match_score(normalized)?;
     let score = base + usage_score(&snapshot.stats_for(command.id));
     Some(SearchResult {
         title: command.title().to_string(),
@@ -269,6 +269,48 @@ mod tests {
 
         assert!(results.iter().any(|result| result.kind == Kind::System
             && matches!(&result.action, Action::Run(cmd) if cmd.first().map(String::as_str) == Some("loginctl"))));
+    }
+
+    #[test]
+    fn partial_word_inside_system_keyword_does_not_match() {
+        // "ter" sits inside "herunterfahren"; typing the start of "terminal"
+        // must never surface (let alone rank first) a power action.
+        let db = HistoryDb::open_in_memory().unwrap();
+        let apps = vec![test_app(
+            "Ghostty",
+            None,
+            Some("A terminal emulator"),
+            &["terminal", "tty", "pty"],
+            "/tmp/ghostty.desktop",
+        )];
+
+        let results = search(&apps, "ter", &db.snapshot("ter"));
+
+        assert!(results.iter().all(|result| result.kind != Kind::System));
+        assert_eq!(results[0].title, "Ghostty");
+    }
+
+    #[test]
+    fn app_name_prefix_outranks_system_keyword_prefix() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let apps = vec![test_app("Restic Browser", None, None, &[], "/tmp/restic.desktop")];
+
+        let results = search(&apps, "res", &db.snapshot("res"));
+
+        assert_eq!(results[0].title, "Restic Browser");
+        assert!(results.iter().any(|result| result.kind == Kind::System));
+    }
+
+    #[test]
+    fn power_actions_go_through_the_plasma_confirmation_prompt() {
+        for id in ["system:shutdown", "system:reboot", "system:logout"] {
+            let command = COMMANDS.iter().find(|command| command.id == id).unwrap();
+            assert!(
+                !command.command.contains(&"systemctl"),
+                "{id} must ask for confirmation instead of acting directly"
+            );
+            assert!(command.command.iter().any(|arg| arg.contains("LogoutPrompt")));
+        }
     }
 
     #[test]

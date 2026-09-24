@@ -13,7 +13,8 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 - Fuzzy app search with exact, prefix, substring, character-order, keyword, generic-name, and
   comment matching
 - Inline calculator: type an expression (e.g. `2 + 3 * 4`); `Enter` copies the result
-- Built-in system actions: lock, log out, suspend, reboot, shut down (matched by keyword)
+- Built-in system actions: lock, log out, suspend, reboot, shut down (matched by word start).
+  Log out, reboot, and shut down open Plasma's confirmation prompt instead of acting directly
 - Launch with `Enter` or by activating a selected result row
 - `Escape` hides the launcher
 - Up/down arrow navigation
