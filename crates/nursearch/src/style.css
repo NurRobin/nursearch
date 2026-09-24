@@ -44,6 +44,21 @@ window {
     box-shadow: none;
 }
 
+/* Names the plugin or quicklink a keyword switched to ("f " → Files). */
+.mode-pill {
+    color: #e0a64a;
+    background: rgba(224, 166, 74, 0.14);
+    border-radius: 8px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* Keep typed text clear of the mode pill. */
+.search-entry.with-mode {
+    padding-right: 140px;
+}
+
 .search-entry text {
     background: transparent;
     outline: none;

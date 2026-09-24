@@ -39,6 +39,8 @@ struct AppState {
     config: config::Settings,
     /// Home directory for `~` paths.
     home: Option<std::path::PathBuf>,
+    /// Pill inside the search field naming the active keyword mode.
+    mode_pill: Option<gtk::Label>,
     /// The merged, ranked list currently shown on the root screen.
     results: Vec<SearchResult>,
     db: HistoryDb,
@@ -301,6 +303,7 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
         settings_pages,
         config: settings.clone(),
         home: std::env::var_os("HOME").map(std::path::PathBuf::from),
+        mode_pill: None,
         results: Vec::new(),
         db,
         host: None,
@@ -392,7 +395,21 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
         .visible(false)
         .build();
 
-    root.append(&entry);
+    // The pill shows which plugin or quicklink a keyword switched to, so
+    // typing "f " is visibly a file search rather than a search for "f".
+    let mode_pill = gtk::Label::builder()
+        .halign(gtk::Align::End)
+        .valign(gtk::Align::Center)
+        .margin_end(14)
+        .visible(false)
+        .can_target(false)
+        .build();
+    mode_pill.add_css_class("mode-pill");
+    let entry_overlay = gtk::Overlay::builder().child(&entry).build();
+    entry_overlay.add_overlay(&mode_pill);
+    state.borrow_mut().mode_pill = Some(mode_pill);
+
+    root.append(&entry_overlay);
     root.append(&status);
     root.append(&content_root);
     root.append(&content_session);
@@ -632,6 +649,13 @@ fn dispatch_query(
     let host = state.borrow().host.clone();
     let keyword = host.as_ref().and_then(|host| host.keyword_match(&query));
     let normalized = db::normalize_query(&query);
+    update_mode_pill(
+        state,
+        entry,
+        host.as_ref(),
+        keyword.as_ref().map(|(id, _)| id.as_str()),
+        &query,
+    );
 
     // Decide exactly which plugins are asked to contribute, with the text each
     // gets. A keyword takes over (only that plugin); otherwise every global
@@ -682,6 +706,43 @@ fn dispatch_query(
                 &id,
                 &nursearch_proto::HostMessage::Query { generation, text },
             );
+        }
+    }
+}
+
+/// Name the active keyword mode (a plugin keyword or a quicklink) in the pill.
+fn update_mode_pill(
+    state: &Rc<RefCell<AppState>>,
+    entry: &gtk::Entry,
+    host: Option<&PluginHost>,
+    plugin_id: Option<&str>,
+    query: &str,
+) {
+    let st = state.borrow();
+    let Some(pill) = st.mode_pill.as_ref() else {
+        return;
+    };
+    let plugin_name = plugin_id
+        .and_then(|id| host.and_then(|host| host.manifest(id)))
+        .map(|manifest| manifest.name);
+    let quicklink_name = || {
+        let (keyword, _) = query.trim_start().split_once(char::is_whitespace)?;
+        let keyword = keyword.to_lowercase();
+        st.config
+            .quicklinks
+            .iter()
+            .find(|link| link.keyword == keyword)
+            .map(|link| link.name.clone())
+    };
+    match plugin_name.or_else(quicklink_name) {
+        Some(name) => {
+            pill.set_text(&name);
+            pill.set_visible(true);
+            entry.add_css_class("with-mode");
+        }
+        None => {
+            pill.set_visible(false);
+            entry.remove_css_class("with-mode");
         }
     }
 }
