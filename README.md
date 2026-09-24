@@ -39,7 +39,9 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 - Plugin platform: a fast built-in core (apps, calculator, system) plus a
   plugin protocol with push-view sessions, per-plugin persistent storage, and a
   Rust SDK. Bundled plugins: clipboard history, emoji picker, web search, file
-  search, and a KDE window switcher. Manage them with the `nursearch-plugins`
+  search, KDE window switcher, KDE Connect device control, network toggles
+  (Wi-Fi / Bluetooth), desktop toggles (Night Color / Do Not Disturb), and
+  systemd user-service control. Manage them with the `nursearch-plugins`
   CLI (`list` / `install <path|git-url>` / `remove <id>`). See
   [docs/PLUGINS.md](docs/PLUGINS.md) and the
   [agent authoring guide](docs/AGENTS-PLUGIN-GUIDE.md)

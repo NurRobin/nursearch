@@ -1,0 +1,14 @@
+id = "dev.nursearch.network"
+name = "Network"
+description = "Toggle Wi-Fi / Bluetooth and connect to known Wi-Fi networks (requires nmcli)"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "network-wireless"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-network"]
+capabilities = []
+
+[activation]
+mode = "keyword"
+keyword = "n"

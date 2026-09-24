@@ -1,0 +1,14 @@
+id = "dev.nursearch.desktop"
+name = "Desktop Toggles"
+description = "Toggle Night Color and Do Not Disturb on KDE Plasma 6 via D-Bus"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "preferences-desktop"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-desktop"]
+capabilities = []
+
+[activation]
+mode = "keyword"
+keyword = "d"

@@ -11,6 +11,10 @@ members = [
     "plugins/web",
     "plugins/files",
     "plugins/windows",
+    "plugins/kdeconnect",
+    "plugins/network",
+    "plugins/desktop",
+    "plugins/systemd",
 ]
 default-members = ["crates/nursearch"]
 exclude = ["templates"]

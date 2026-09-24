@@ -787,6 +787,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nursearch-desktop-plugin"
+version = "0.2.3"
+dependencies = [
+ "nursearch-plugin",
+ "nursearch-proto",
+]
+
+[[package]]
 name = "nursearch-emoji-plugin"
 version = "0.2.3"
 dependencies = [
@@ -796,6 +804,22 @@ dependencies = [
 
 [[package]]
 name = "nursearch-files-plugin"
+version = "0.2.3"
+dependencies = [
+ "nursearch-plugin",
+ "nursearch-proto",
+]
+
+[[package]]
+name = "nursearch-kdeconnect-plugin"
+version = "0.2.3"
+dependencies = [
+ "nursearch-plugin",
+ "nursearch-proto",
+]
+
+[[package]]
+name = "nursearch-network-plugin"
 version = "0.2.3"
 dependencies = [
  "nursearch-plugin",
@@ -826,6 +850,14 @@ version = "0.2.3"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nursearch-systemd-plugin"
+version = "0.2.3"
+dependencies = [
+ "nursearch-plugin",
+ "nursearch-proto",
 ]
 
 [[package]]

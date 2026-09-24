@@ -12,6 +12,9 @@ optdepends=(
   'fd: faster file search plugin backend'
   'kdotool: KDE Plasma Wayland window switcher plugin'
   'wl-clipboard: clipboard history plugin'
+  'kdeconnect: KDE Connect device control plugin'
+  'networkmanager: network toggle / Wi-Fi connect plugin'
+  'util-linux: rfkill for Bluetooth toggle (network plugin)'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
@@ -43,13 +46,13 @@ package() {
   install -Dm755 target/release/nursearch-plugins "$pkgdir/usr/bin/nursearch-plugins"
 
   local plugin_bin
-  for plugin_bin in clipboard demo emoji files web windows; do
+  for plugin_bin in clipboard demo emoji files web windows kdeconnect network desktop systemd; do
     install -Dm755 "target/release/nursearch-$plugin_bin" \
       "$pkgdir/usr/lib/nursearch/nursearch-$plugin_bin"
   done
 
   local plugin
-  for plugin in clipboard demo emoji files web windows; do
+  for plugin in clipboard demo emoji files web windows kdeconnect network desktop systemd; do
     install -Dm644 "plugins/$plugin/nursearch-plugin.toml" \
       "$pkgdir/usr/share/nursearch/plugins/$plugin/nursearch-plugin.toml"
     sed -i "s#entry = \\[\"../../target/debug/nursearch-$plugin\"\\]#entry = [\"/usr/lib/nursearch/nursearch-$plugin\"]#" \

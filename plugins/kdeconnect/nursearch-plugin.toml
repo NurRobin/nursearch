@@ -1,0 +1,14 @@
+id = "dev.nursearch.kdeconnect"
+name = "KDE Connect"
+description = "List paired KDE Connect devices and send actions (requires kdeconnect-cli)"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "kdeconnect"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-kdeconnect"]
+capabilities = ["clipboard", "run"]
+
+[activation]
+mode = "keyword"
+keyword = "k"

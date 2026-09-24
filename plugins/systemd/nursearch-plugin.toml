@@ -1,0 +1,14 @@
+id = "dev.nursearch.systemd"
+name = "Systemd Services"
+description = "List and control user systemd services (start / stop / restart / status)"
+version = "0.1.0"
+author = "NurSearch"
+license = "MIT"
+icon = "application-x-executable"
+protocol_version = 1
+entry = ["../../target/debug/nursearch-systemd"]
+capabilities = []
+
+[activation]
+mode = "keyword"
+keyword = "sc"
