@@ -3,7 +3,7 @@
 //! Provides quick access to network controls:
 //! - Toggle Wi-Fi on/off (`nmcli radio wifi on|off`)
 //! - Toggle Bluetooth on/off (`rfkill block/unblock bluetooth`)
-//! - List known Wi-Fi networks and connect to one (`nmcli device wifi connect`)
+//! - List visible Wi-Fi networks and connect to one (`nmcli device wifi connect`)
 //!
 //! Requires `nmcli` (NetworkManager) for Wi-Fi control. Bluetooth toggle uses
 //! `rfkill` which is always present on Linux. If `nmcli` is not available, a
@@ -130,7 +130,7 @@ fn main_view(filter: &str) -> View {
         });
     }
 
-    // Known Wi-Fi networks (only shown when Wi-Fi is on)
+    // Visible Wi-Fi networks (only shown when Wi-Fi is on)
     if wifi_on {
         for (ssid, in_use) in list_wifi_networks() {
             if !needle.is_empty() && !ssid.to_lowercase().contains(&*needle) {
@@ -142,7 +142,7 @@ fn main_view(filter: &str) -> View {
                 subtitle: Some(if in_use {
                     "Connected".to_string()
                 } else {
-                    "Known network — click to connect".to_string()
+                    "Visible network — click to connect".to_string()
                 }),
                 icon: Some("network-wireless".to_string()),
                 accessories: if in_use {
@@ -240,7 +240,7 @@ fn unescape_terse(field: &str) -> String {
     out
 }
 
-/// Returns (SSID, in_use) for known Wi-Fi networks.
+/// Returns (SSID, in_use) for visible Wi-Fi networks.
 fn list_wifi_networks() -> Vec<(String, bool)> {
     let output = Command::new("nmcli")
         .args(["-t", "-f", "IN-USE,SSID", "device", "wifi", "list"])

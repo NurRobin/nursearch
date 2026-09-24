@@ -1,6 +1,6 @@
 id = "dev.nursearch.network"
 name = "Network"
-description = "Toggle Wi-Fi / Bluetooth and connect to known Wi-Fi networks (requires nmcli)"
+description = "Toggle Wi-Fi / Bluetooth and connect to visible Wi-Fi networks (requires nmcli)"
 version = "0.1.0"
 author = "NurSearch"
 license = "MIT"
