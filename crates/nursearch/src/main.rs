@@ -9,6 +9,7 @@ mod launch;
 mod plugin;
 mod rank;
 mod search;
+mod shortcut;
 mod system;
 mod view;
 
@@ -235,7 +236,30 @@ fn main() -> glib::ExitCode {
         }
     }
 
-    let background = wants_background(std::env::args().skip(1));
+    let background = match parse_cli(std::env::args().skip(1)) {
+        Ok(Cli::Launch { background }) => background,
+        Ok(Cli::ClearHistory) => return clear_history(),
+        Ok(Cli::SetupShortcut) => {
+            return match shortcut::setup(true) {
+                Ok(message) => {
+                    println!("{message}");
+                    glib::ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("{err}");
+                    glib::ExitCode::FAILURE
+                }
+            };
+        }
+        Ok(Cli::Help) => {
+            println!("{USAGE}");
+            return glib::ExitCode::SUCCESS;
+        }
+        Err(unknown) => {
+            eprintln!("unknown option: {unknown}\n\n{USAGE}");
+            return glib::ExitCode::FAILURE;
+        }
+    };
     let app = gtk::Application::builder().application_id(APP_ID).build();
 
     if background {
@@ -267,9 +291,48 @@ fn main() -> glib::ExitCode {
     app.run_with_args(&std::env::args().take(1).collect::<Vec<_>>())
 }
 
-/// Whether the command line asks for a hidden start (`--background`).
-fn wants_background(mut args: impl Iterator<Item = String>) -> bool {
-    args.any(|arg| arg == "--background")
+const USAGE: &str = "Usage: nursearch [OPTION]
+Open the launcher (or start it, then keep it resident).
+
+  --background       start hidden (used by the login autostart)
+  --clear-history    forget all launch history and exit
+  --setup-shortcut   bind the Meta key to NurSearch on KDE Plasma and exit
+  --help             show this help";
+
+#[derive(Debug, PartialEq, Eq)]
+enum Cli {
+    Launch { background: bool },
+    ClearHistory,
+    SetupShortcut,
+    Help,
+}
+
+/// Parse our own flags; returns the offending argument if one is unknown.
+fn parse_cli(args: impl Iterator<Item = String>) -> Result<Cli, String> {
+    let mut cli = Cli::Launch { background: false };
+    for arg in args {
+        cli = match arg.as_str() {
+            "--background" => Cli::Launch { background: true },
+            "--clear-history" => Cli::ClearHistory,
+            "--setup-shortcut" => Cli::SetupShortcut,
+            "-h" | "--help" => Cli::Help,
+            _ => return Err(arg),
+        };
+    }
+    Ok(cli)
+}
+
+fn clear_history() -> glib::ExitCode {
+    match HistoryDb::open().and_then(|db| db.clear_history()) {
+        Ok(()) => {
+            println!("Launch history cleared.");
+            glib::ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("could not clear the launch history: {err}");
+            glib::ExitCode::FAILURE
+        }
+    }
 }
 
 fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
@@ -293,6 +356,13 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
             }
         },
     };
+
+    match db.prune() {
+        Ok(0) => {}
+        Ok(removed) => info!("pruned {removed} stale history entries"),
+        Err(err) => warn!("could not prune history: {err}"),
+    }
+    shortcut::ensure_on_first_run();
 
     let settings_pages = kcm::discover();
     info!("discovered {} settings pages", settings_pages.len());
@@ -1571,13 +1641,21 @@ fn hint_bar() -> gtk::Box {
 
 #[cfg(test)]
 mod tests {
-    use super::wants_background;
+    use super::{Cli, parse_cli};
+
+    fn parse(list: &[&str]) -> Result<Cli, String> {
+        parse_cli(list.iter().map(|arg| arg.to_string()))
+    }
 
     #[test]
-    fn background_flag_is_detected() {
-        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
-        assert!(wants_background(args(&["--background"]).into_iter()));
-        assert!(!wants_background(args(&[]).into_iter()));
-        assert!(!wants_background(args(&["--other"]).into_iter()));
+    fn parses_command_line_flags() {
+        assert_eq!(parse(&[]), Ok(Cli::Launch { background: false }));
+        assert_eq!(
+            parse(&["--background"]),
+            Ok(Cli::Launch { background: true })
+        );
+        assert_eq!(parse(&["--clear-history"]), Ok(Cli::ClearHistory));
+        assert_eq!(parse(&["--setup-shortcut"]), Ok(Cli::SetupShortcut));
+        assert_eq!(parse(&["--other"]), Err("--other".to_string()));
     }
 }

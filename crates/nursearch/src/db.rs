@@ -177,6 +177,31 @@ impl HistoryDb {
         snapshot
     }
 
+    /// Forget all launch history (plugin storage such as clipboard history is
+    /// kept; it belongs to the plugins).
+    pub fn clear_history(&self) -> Result<()> {
+        self.conn
+            .execute_batch("DELETE FROM query_usage; DELETE FROM app_usage;")
+    }
+
+    /// Drop history that stopped mattering: per-query entries unused for
+    /// [`QUERY_HISTORY_DAYS`] and global counts unused for
+    /// [`GLOBAL_HISTORY_DAYS`]. Keeps months of varied typing from piling up.
+    /// Returns the number of removed rows.
+    pub fn prune(&self) -> Result<usize> {
+        let now = unix_time();
+        let query_cutoff = now - QUERY_HISTORY_DAYS * 86_400;
+        let global_cutoff = now - GLOBAL_HISTORY_DAYS * 86_400;
+        let removed = self.conn.execute(
+            "DELETE FROM query_usage WHERE last_used < ?1",
+            params![query_cutoff],
+        )? + self.conn.execute(
+            "DELETE FROM app_usage WHERE last_used < ?1",
+            params![global_cutoff],
+        )?;
+        Ok(removed)
+    }
+
     pub fn record_launch(&self, query: &str, desktop_file: &str) -> Result<()> {
         let now = unix_time();
         self.conn.execute(
@@ -228,6 +253,11 @@ fn load_counts<P: rusqlite::Params>(
     }
     Ok(())
 }
+
+/// How long a query-specific launch is remembered without being used again.
+pub const QUERY_HISTORY_DAYS: i64 = 180;
+/// How long an item's global launch count is kept without a new launch.
+pub const GLOBAL_HISTORY_DAYS: i64 = 365;
 
 pub fn normalize_query(query: &str) -> String {
     query.trim().to_lowercase()
@@ -310,5 +340,40 @@ mod tests {
         // "a%" is a literal prefix, so it must match only "a%b", not "axb".
         let listed = db.storage_list("p", Some("a%")).unwrap();
         assert_eq!(listed, vec![("a%b".to_string(), "1".to_string())]);
+    }
+
+    #[test]
+    fn clear_and_prune_history() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        db.record_launch("fire", "/tmp/firefox.desktop").unwrap();
+        db.record_launch("old", "/tmp/old.desktop").unwrap();
+        db.conn
+            .execute(
+                "UPDATE query_usage SET last_used = 1 WHERE query = 'old'",
+                [],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE app_usage SET last_used = 1 WHERE desktop_file = '/tmp/old.desktop'",
+                [],
+            )
+            .unwrap();
+
+        assert_eq!(db.prune().unwrap(), 2);
+        assert_eq!(
+            db.snapshot("fire")
+                .stats_for("/tmp/firefox.desktop")
+                .query_count,
+            1
+        );
+
+        db.clear_history().unwrap();
+        assert_eq!(
+            db.snapshot("fire")
+                .stats_for("/tmp/firefox.desktop")
+                .global_count,
+            0
+        );
     }
 }

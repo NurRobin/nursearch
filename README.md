@@ -111,16 +111,27 @@ is registered with the AUR account allowed to push `nursearch.git`.
 
 ## KDE Shortcut Setup
 
-To bind NurSearch to `Meta+Space` in KDE Plasma:
+On KDE Plasma, the first start binds the Meta key to NurSearch if NurSearch has no shortcut yet,
+and removes Meta from Kickoff ("Activate Application Launcher"; Alt+F1 stays). A shortcut you set
+yourself is never overwritten. To bind Meta explicitly (keeping any other NurSearch shortcuts):
 
-1. Open System Settings.
-2. Go to Keyboard > Shortcuts.
-3. Add a custom command shortcut.
-4. Use `nursearch` as the command.
-5. Assign `Meta+Space`.
+```sh
+nursearch --setup-shortcut
+```
 
-If `Meta+Space` is already assigned to KRunner or another launcher, remove or change that binding
-first.
+Or by hand: System Settings > Keyboard > Shortcuts, add NurSearch as an application shortcut.
+
+## Command Line
+
+```text
+nursearch                    open the launcher (starts the resident daemon if needed)
+nursearch --background       start hidden (used by the login autostart)
+nursearch --clear-history    forget all launch history
+nursearch --setup-shortcut   bind Meta to NurSearch on KDE Plasma
+```
+
+Launch history is pruned automatically: query-specific entries unused for 180 days and global
+counts unused for a year are dropped.
 
 ## Desktop App Discovery
 
