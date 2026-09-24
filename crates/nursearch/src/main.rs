@@ -11,6 +11,7 @@ mod rank;
 mod search;
 mod shortcut;
 mod system;
+mod units;
 mod view;
 
 use db::{HistoryDb, StatsSnapshot};
