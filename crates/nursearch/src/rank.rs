@@ -22,11 +22,29 @@ pub(crate) fn match_score(text: &str, query: &str) -> Option<i64> {
     if text.starts_with(query) {
         return Some(8_000 - text.len() as i64);
     }
+    // A match at the start of a word ("stu" in "Visual Studio") is what people
+    // type; a match inside a word ("ter" in "Center") is usually incidental and
+    // must rank below a word-start match in an app's keywords or comment.
+    if let Some(index) = word_start_index(&text, query) {
+        return Some(7_000 - index as i64 - text.len() as i64);
+    }
     if let Some(index) = text.find(query) {
-        return Some(6_000 - index as i64 - text.len() as i64);
+        return Some(4_000 - index as i64 - text.len() as i64);
     }
 
     fuzzy_score(&text, query).map(|score| 3_000 + score)
+}
+
+/// Byte index of the first occurrence of `query` that begins a word.
+fn word_start_index(text: &str, query: &str) -> Option<usize> {
+    text.match_indices(query)
+        .map(|(index, _)| index)
+        .find(|&index| {
+            text[..index]
+                .chars()
+                .next_back()
+                .is_none_or(|previous| !previous.is_alphanumeric())
+        })
 }
 
 fn fuzzy_score(name: &str, query: &str) -> Option<i64> {
@@ -99,6 +117,14 @@ mod tests {
         assert!(
             match_score("Web Browser", "browser").unwrap()
                 > match_score("Word Builder", "wb").unwrap()
+        );
+    }
+
+    #[test]
+    fn word_start_substring_beats_mid_word_substring() {
+        assert!(
+            match_score("Visual Studio Code", "stu").unwrap()
+                > match_score("Bestuhlung", "stu").unwrap()
         );
     }
 

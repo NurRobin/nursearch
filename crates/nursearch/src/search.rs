@@ -291,6 +291,27 @@ mod tests {
     }
 
     #[test]
+    fn keyword_word_start_beats_mid_word_name_match() {
+        // "ter" is the start of the keyword "terminal" but only the tail of
+        // "Center"; the terminal is what the user means.
+        let db = HistoryDb::open_in_memory().unwrap();
+        let apps = vec![
+            test_app("Info Center", None, None, &[], "/tmp/info.desktop"),
+            test_app(
+                "Ghostty",
+                None,
+                Some("A terminal emulator"),
+                &["terminal", "tty", "pty"],
+                "/tmp/ghostty.desktop",
+            ),
+        ];
+
+        let results = search(&apps, "ter", &db.snapshot("ter"));
+
+        assert_eq!(results[0].title, "Ghostty");
+    }
+
+    #[test]
     fn app_name_prefix_outranks_system_keyword_prefix() {
         let db = HistoryDb::open_in_memory().unwrap();
         let apps = vec![test_app("Restic Browser", None, None, &[], "/tmp/restic.desktop")];
