@@ -5,6 +5,7 @@
 use crate::calc;
 use crate::db::{StatsSnapshot, normalize_query};
 use crate::desktop::DesktopEntry;
+use crate::kcm::SettingsPage;
 use crate::rank::{app_match_score, usage_score};
 use crate::system::{COMMANDS, SystemCommand};
 use nursearch_proto::ResultItem;
@@ -34,6 +35,8 @@ pub enum Kind {
     App,
     Calculator,
     System,
+    /// A KDE System Settings page.
+    Settings,
     /// A contribution from a plugin; carries the plugin's display name for the badge.
     Plugin(String),
 }
@@ -44,6 +47,7 @@ impl Kind {
             Kind::App => None,
             Kind::Calculator => Some("=".to_string()),
             Kind::System => Some(crate::i18n::badge_system().to_string()),
+            Kind::Settings => Some(crate::i18n::badge_settings().to_string()),
             Kind::Plugin(name) => Some(name.clone()),
         }
     }
@@ -91,14 +95,16 @@ pub struct SearchResult {
 /// Build the ranked result list for a query across all providers.
 #[cfg(test)]
 pub fn search(apps: &[DesktopEntry], query: &str, snapshot: &StatsSnapshot) -> Vec<SearchResult> {
-    finalize(core_results(apps, query, snapshot))
+    finalize(core_results(apps, &[], query, snapshot))
 }
 
-/// Results from the mandatory in-process core (apps, calculator, system),
+/// Results from the mandatory in-process core (apps, calculator, system,
+/// settings pages),
 /// unranked and untruncated so plugin contributions can be merged in before
 /// [`finalize`].
 pub fn core_results(
     apps: &[DesktopEntry],
+    settings: &[SettingsPage],
     query: &str,
     snapshot: &StatsSnapshot,
 ) -> Vec<SearchResult> {
@@ -110,6 +116,7 @@ pub fn core_results(
             results.push(result);
         }
         results.extend(system_results(&normalized, snapshot));
+        results.extend(settings_results(settings, &normalized, snapshot));
     }
     results.extend(app_results(apps, &normalized, snapshot));
     results
@@ -145,6 +152,45 @@ fn app_results(
                 score,
                 history_key: Some(key),
                 action: Action::Launch(app.clone()),
+            })
+        })
+        .collect()
+}
+
+/// Score penalty for settings pages, so an app with the same match wins: the
+/// "Bluetooth" app should outrank the Bluetooth settings page.
+const SETTINGS_PENALTY: i64 = 500;
+/// Additional penalty when only a keyword matched, as for app metadata.
+const SETTINGS_KEYWORD_PENALTY: i64 = 2_500;
+
+fn settings_results(
+    pages: &[SettingsPage],
+    normalized: &str,
+    snapshot: &StatsSnapshot,
+) -> Vec<SearchResult> {
+    pages
+        .iter()
+        .filter_map(|page| {
+            let name_score = crate::rank::match_score(&page.name, normalized);
+            // Score keywords one by one: joined, the long keyword lists would
+            // drown every match in the length penalty.
+            let keyword_score = page
+                .keywords
+                .iter()
+                .filter_map(|keyword| crate::rank::word_start_score(keyword, normalized))
+                .max()
+                .map(|score| score - SETTINGS_KEYWORD_PENALTY);
+            let base = name_score.max(keyword_score)? - SETTINGS_PENALTY;
+            let key = format!("kcm:{}", page.id);
+            let score = base + usage_score(&snapshot.stats_for(&key));
+            Some(SearchResult {
+                title: page.name.clone(),
+                subtitle: page.description.clone(),
+                icon: page.icon.clone(),
+                kind: Kind::Settings,
+                score,
+                history_key: Some(key),
+                action: Action::Run(vec!["systemsettings".to_string(), page.id.clone()]),
             })
         })
         .collect()
@@ -312,6 +358,20 @@ mod tests {
     }
 
     #[test]
+    fn scattered_letters_in_metadata_do_not_match() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let apps = vec![test_app(
+            "LibreOffice Math",
+            Some("Formula Editor"),
+            Some("Create and edit scientific formulas and equations"),
+            &["equation", "office", "math", "formula"],
+            "/tmp/math.desktop",
+        )];
+
+        assert!(search(&apps, "bluetooth", &db.snapshot("bluetooth")).is_empty());
+    }
+
+    #[test]
     fn app_name_prefix_outranks_system_keyword_prefix() {
         let db = HistoryDb::open_in_memory().unwrap();
         let apps = vec![test_app(
@@ -343,6 +403,50 @@ mod tests {
                     .any(|arg| arg.contains("LogoutPrompt"))
             );
         }
+    }
+
+    fn display_page() -> SettingsPage {
+        SettingsPage {
+            id: "kcm_kscreen".to_string(),
+            name: "Display Configuration".to_string(),
+            description: None,
+            icon: None,
+            keywords: vec![
+                "monitor".to_string(),
+                "hdr".to_string(),
+                "resolution".to_string(),
+            ],
+        }
+    }
+
+    #[test]
+    fn settings_page_is_found_by_keyword_and_opens_system_settings() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let results = finalize(core_results(
+            &[],
+            &[display_page()],
+            "hdr",
+            &db.snapshot("hdr"),
+        ));
+
+        assert_eq!(results[0].kind, Kind::Settings);
+        assert!(
+            matches!(&results[0].action, Action::Run(cmd) if cmd == &["systemsettings", "kcm_kscreen"])
+        );
+    }
+
+    #[test]
+    fn settings_keyword_needs_a_word_start() {
+        // "sol" sits inside "resolution" and must not surface the page.
+        let db = HistoryDb::open_in_memory().unwrap();
+        let results = finalize(core_results(
+            &[],
+            &[display_page()],
+            "sol",
+            &db.snapshot("sol"),
+        ));
+
+        assert!(results.is_empty());
     }
 
     #[test]

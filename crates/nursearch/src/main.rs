@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod desktop;
 mod i18n;
+mod kcm;
 mod launch;
 mod plugin;
 mod rank;
@@ -30,6 +31,8 @@ const APP_ID: &str = "dev.nursearch.NurSearch";
 
 struct AppState {
     apps: Vec<DesktopEntry>,
+    /// KDE System Settings pages; empty outside Plasma.
+    settings: Vec<kcm::SettingsPage>,
     /// The merged, ranked list currently shown on the root screen.
     results: Vec<SearchResult>,
     db: HistoryDb,
@@ -242,8 +245,12 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
         },
     };
 
+    let settings = kcm::discover();
+    info!("discovered {} settings pages", settings.len());
+
     let state = Rc::new(RefCell::new(AppState {
         apps,
+        settings,
         results: Vec::new(),
         db,
         host: None,
@@ -586,7 +593,7 @@ fn dispatch_query(
         st.core = if keyword.is_some() {
             Vec::new()
         } else {
-            core_results(&st.apps, &query, &snapshot)
+            core_results(&st.apps, &st.settings, &query, &snapshot)
         };
         st.snapshot = snapshot;
         st.plugin_results.clear();

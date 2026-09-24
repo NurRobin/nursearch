@@ -3,18 +3,41 @@ use crate::desktop::DesktopEntry;
 
 /// Score how well an app matches the (already normalized) query, combining a
 /// strong name match with a weaker fallback over generic name / comment / keywords.
+/// Metadata must contain the query literally: scattered fuzzy hits in a long
+/// comment ("bluetooth" in "LibreOffice Math") are noise.
 pub fn app_match_score(app: &DesktopEntry, query: &str) -> Option<i64> {
     let name_score = match_score(&app.name, query);
-    let metadata_score = match_score(&app.search_text(), query).map(|score| score - 2_500);
+    let metadata_score = substring_score(&app.search_text(), query).map(|score| score - 2_500);
 
     name_score.max(metadata_score)
 }
 
+/// Full match score: literal matches first, then a fuzzy character-order match.
 pub(crate) fn match_score(text: &str, query: &str) -> Option<i64> {
     if query.is_empty() {
         return Some(1_000);
     }
+    substring_score(text, query)
+        .or_else(|| fuzzy_score(&text.to_lowercase(), query).map(|score| 3_000 + score))
+}
 
+/// Score for `query` occurring literally in `text`, anywhere.
+pub(crate) fn substring_score(text: &str, query: &str) -> Option<i64> {
+    let text = text.to_lowercase();
+    word_start_score(&text, query).or_else(|| {
+        // A match inside a word ("ter" in "Center") is usually incidental and
+        // must rank below a word-start match in an app's keywords or comment.
+        text.find(query)
+            .map(|index| 4_000 - index as i64 - text.len() as i64)
+    })
+}
+
+/// Score for `query` matching the whole of `text` or the start of one of its
+/// words ("stu" in "Visual Studio") — what people actually type.
+pub(crate) fn word_start_score(text: &str, query: &str) -> Option<i64> {
+    if query.is_empty() {
+        return None;
+    }
     let text = text.to_lowercase();
     if text == query {
         return Some(10_000);
@@ -22,17 +45,7 @@ pub(crate) fn match_score(text: &str, query: &str) -> Option<i64> {
     if text.starts_with(query) {
         return Some(8_000 - text.len() as i64);
     }
-    // A match at the start of a word ("stu" in "Visual Studio") is what people
-    // type; a match inside a word ("ter" in "Center") is usually incidental and
-    // must rank below a word-start match in an app's keywords or comment.
-    if let Some(index) = word_start_index(&text, query) {
-        return Some(7_000 - index as i64 - text.len() as i64);
-    }
-    if let Some(index) = text.find(query) {
-        return Some(4_000 - index as i64 - text.len() as i64);
-    }
-
-    fuzzy_score(&text, query).map(|score| 3_000 + score)
+    word_start_index(&text, query).map(|index| 7_000 - index as i64 - text.len() as i64)
 }
 
 /// Byte index of the first occurrence of `query` that begins a word.

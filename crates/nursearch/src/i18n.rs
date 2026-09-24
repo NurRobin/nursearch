@@ -50,6 +50,7 @@ tr!(
     de = "Enter kopiert das Ergebnis"
 );
 tr!(badge_system, en = "System", de = "System");
+tr!(badge_settings, en = "Settings", de = "Einstellungen");
 
 tr!(hint_open, en = "Open", de = "Öffnen");
 tr!(hint_navigate, en = "Navigate", de = "Navigieren");

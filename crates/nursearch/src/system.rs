@@ -2,6 +2,7 @@
 //! results so the launcher can do more than open applications.
 
 use crate::i18n;
+use crate::rank::word_start_score;
 
 /// A system action the launcher can run as an external command. Display strings
 /// are localized via [`i18n`]; keywords stay multilingual so a query in either
@@ -90,20 +91,11 @@ impl SystemCommand {
     /// count: substring and fuzzy matching is what let "ter" (from "terminal")
     /// hit "herun*ter*fahren" and outrank the terminal app.
     pub fn match_score(&self, query: &str) -> Option<i64> {
-        if query.is_empty() {
-            return None;
-        }
-        let title = self.title().to_lowercase();
-        let title_score = (title.starts_with(query)
-            || title.split_whitespace().any(|word| word.starts_with(query)))
-        .then(|| crate::rank::match_score(&title, query))
-        .flatten()
-        .map(|score| score - TITLE_PENALTY);
+        let title_score = word_start_score(self.title(), query).map(|score| score - TITLE_PENALTY);
         let keyword_score = self
             .keywords
             .iter()
-            .filter(|keyword| keyword.starts_with(query))
-            .filter_map(|keyword| crate::rank::match_score(keyword, query))
+            .filter_map(|keyword| word_start_score(keyword, query))
             .max()
             .map(|score| score - KEYWORD_PENALTY);
         title_score.max(keyword_score)

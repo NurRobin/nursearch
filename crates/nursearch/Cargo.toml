@@ -14,3 +14,4 @@ serde.workspace = true
 serde_json.workspace = true
 shell-words = "1.1"
 toml = "0.8"
+ciborium = "0.2"
