@@ -70,11 +70,13 @@ The bundled plugins are worked examples:
 - `plugins/windows` — KDE Wayland window switcher via `kdotool` (keyword `w`).
 - `plugins/kdeconnect` — list paired KDE Connect devices; ring, ping, or send
   clipboard to a device (keyword `k`; requires `kdeconnect-cli`).
-- `plugins/network` — toggle Wi-Fi and Bluetooth; list and connect to known
-  Wi-Fi networks (keyword `n`; requires `nmcli` / `rfkill`).
-- `plugins/desktop` — toggle Night Color (via `org.kde.KWin.NightLight`) and
-  Do Not Disturb (via `org.freedesktop.Notifications`) with inhibitor cookies
-  persisted across restarts (keyword `d`; requires KDE Plasma 6 and `busctl`).
+- `plugins/network` — toggle Wi-Fi and Bluetooth; list visible Wi-Fi
+  networks and connect to them (keyword `n`; requires `nmcli` / `rfkill`).
+- `plugins/desktop` — pause Night Color (via `org.kde.KWin.NightLight`) and
+  turn on Do Not Disturb (via `org.freedesktop.Notifications`) (keyword `d`;
+  requires KDE Plasma 6). Both are inhibitions held on the plugin's own D-Bus
+  connection, like the Plasma applets do: they last until toggled back or
+  until NurSearch quits.
 - `plugins/systemd` — list and control `--user` systemd services; start, stop,
   restart, or view status; safety-critical units (`app-*`, `plasma-*`,
   `pipewire*`, etc.) are shown read-only (keyword `sc`).

@@ -41,7 +41,9 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
   Rust SDK. Bundled plugins: clipboard history, emoji picker, web search, file
   search, KDE window switcher, KDE Connect device control, network toggles
   (Wi-Fi / Bluetooth), desktop toggles (Night Color / Do Not Disturb), and
-  systemd user-service control. Manage them with the `nursearch-plugins`
+  systemd user-service control. Keywords: `c` clipboard, `e` emoji, `g` web, `f` files,
+  `w` windows, `k` KDE Connect, `n` network, `d` desktop toggles, `sc` services. The clipboard
+  history skips entries password managers mark as secret. Manage them with the `nursearch-plugins`
   CLI (`list` / `install <path|git-url>` / `remove <id>`). See
   [docs/PLUGINS.md](docs/PLUGINS.md) and the
   [agent authoring guide](docs/AGENTS-PLUGIN-GUIDE.md)
