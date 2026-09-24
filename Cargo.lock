@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ciborium",
  "env_logger",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-clipboard-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1034,7 +1034,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-demo-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-desktop-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1051,7 +1051,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-emoji-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-files-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-kdeconnect-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-network-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-proto",
  "serde",
@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-pm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "tempfile",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-proto"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-systemd-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-web-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "nursearch-windows-plugin"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "nursearch-plugin",
  "nursearch-proto",
