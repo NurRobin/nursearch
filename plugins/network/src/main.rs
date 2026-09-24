@@ -179,7 +179,9 @@ fn handle_action(_host: &mut dyn HostApi, action_id: &str, item_id: Option<&str>
                 .args(["unblock", "bluetooth"])
                 .status();
         }
-    } else if let Some(ssid) = target.strip_prefix("connect:") {
+    } else if let Some(ssid) = target.strip_prefix("connect:")
+        && is_safe_ssid(ssid)
+    {
         let _ = Command::new("nmcli")
             .args(["device", "wifi", "connect", ssid])
             .status();
@@ -215,6 +217,29 @@ fn bluetooth_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// SSIDs are broadcast by anyone nearby and passed to nmcli as a positional
+/// argument. nmcli has no `--` separator, so a name like "--ask" would be
+/// taken as an option: such networks are not offered at all.
+fn is_safe_ssid(ssid: &str) -> bool {
+    !ssid.is_empty() && !ssid.starts_with('-')
+}
+
+/// Undo `nmcli -t` escaping (`\:` and `\\`) in a field value.
+fn unescape_terse(field: &str) -> String {
+    let mut out = String::with_capacity(field.len());
+    let mut chars = field.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(next) = chars.next()
+        {
+            out.push(next);
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Returns (SSID, in_use) for known Wi-Fi networks.
 fn list_wifi_networks() -> Vec<(String, bool)> {
     let output = Command::new("nmcli")
@@ -232,8 +257,8 @@ fn list_wifi_networks() -> Vec<(String, bool)> {
             Some(pair) => pair,
             None => continue,
         };
-        let ssid = ssid.trim().to_string();
-        if ssid.is_empty() || ssid == "--" {
+        let ssid = unescape_terse(ssid.trim());
+        if ssid.is_empty() || !is_safe_ssid(&ssid) {
             continue;
         }
         if seen.insert(ssid.clone()) {
@@ -271,5 +296,19 @@ mod tests {
         let (marker, ssid) = line.split_once(':').unwrap();
         assert_ne!(marker.trim(), "*");
         assert_eq!(ssid.trim(), "OtherNetwork");
+    }
+}
+
+#[cfg(test)]
+mod ssid_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_option_like_ssids_and_unescapes_terse_output() {
+        assert!(!is_safe_ssid("--ask"));
+        assert!(!is_safe_ssid("-x"));
+        assert!(is_safe_ssid("Gustav"));
+        assert_eq!(unescape_terse("Cafe\\:Gast"), "Cafe:Gast");
+        assert_eq!(unescape_terse("a\\\\b"), "a\\b");
     }
 }
