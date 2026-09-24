@@ -14,19 +14,15 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    # Arch, the platform NurSearch is packaged for: Ubuntu LTS images lack
+    # gtk4-layer-shell.
+    container: archlinux:base-devel
     steps:
+      - name: Install system dependencies
+        run: pacman -Syu --noconfirm --needed git rust gtk4 gtk4-layer-shell sqlite pkgconf
+
       - name: Check out repository
         uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libgtk4-layer-shell-dev libsqlite3-dev
-
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
