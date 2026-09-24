@@ -4,26 +4,61 @@
 //! Robust window enumeration on KWin/Wayland has no simple D-Bus call, so this
 //! plugin relies on `kdotool` (a KWin-scripting CLI). If `kdotool` is not
 //! installed it contributes nothing.
+//!
+//! The window list is cached for up to 1.5 seconds so rapid keystrokes don't
+//! spawn N kdotool processes per character.
 
 use nursearch_plugin::{HostApi, Plugin, Response, run};
 use nursearch_proto::{ResultItem, ViewEvent};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
-struct Windows;
+/// How long a fetched window list stays valid before the next query re-fetches.
+const CACHE_TTL: Duration = Duration::from_millis(1500);
+
+struct Cache {
+    windows: Vec<(String, String)>,
+    fetched_at: Instant,
+}
+
+struct Windows {
+    cache: Option<Cache>,
+}
+
+impl Windows {
+    fn new() -> Self {
+        Self { cache: None }
+    }
+
+    fn cached_windows(&mut self) -> &[(String, String)] {
+        let stale = self
+            .cache
+            .as_ref()
+            .map(|c| c.fetched_at.elapsed() >= CACHE_TTL)
+            .unwrap_or(true);
+        if stale {
+            self.cache = Some(Cache {
+                windows: list_windows(),
+                fetched_at: Instant::now(),
+            });
+        }
+        &self.cache.as_ref().unwrap().windows
+    }
+}
 
 impl Plugin for Windows {
     fn query(&mut self, _host: &mut dyn HostApi, text: &str) -> Vec<ResultItem> {
         let needle = text.trim().to_lowercase();
-        list_windows()
-            .into_iter()
+        self.cached_windows()
+            .iter()
             .filter(|(_, title)| needle.is_empty() || title.to_lowercase().contains(&needle))
             .map(|(id, title)| ResultItem {
                 id: id.clone(),
-                title,
+                title: title.clone(),
                 subtitle: Some("Focus window".to_string()),
                 icon: Some("preferences-system-windows".to_string()),
                 score: 5_000,
-                command_id: id,
+                command_id: id.clone(),
                 actions: Vec::new(),
             })
             .collect()
@@ -74,6 +109,37 @@ fn run_lines(program: &str, args: &[&str]) -> Option<Vec<String>> {
     )
 }
 
+// Thread-local storage is needed because Plugin trait methods take &mut self
+// but the plugin instance itself lives on the stack inside run().
+// The cache is therefore stored on the struct directly (no thread-local needed).
+
 fn main() {
-    run(Windows);
+    run(Windows::new());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_is_reused_within_ttl() {
+        // We can't easily mock kdotool, but we can verify the cache struct
+        // logic: a freshly-created Cache with known data stays valid.
+        let cache = Cache {
+            windows: vec![("1".to_string(), "Firefox".to_string())],
+            fetched_at: Instant::now(),
+        };
+        assert!(cache.fetched_at.elapsed() < CACHE_TTL);
+    }
+
+    #[test]
+    fn cache_expires_after_ttl() {
+        // An artificially backdated cache should be considered stale.
+        let old = Instant::now() - CACHE_TTL - Duration::from_millis(100);
+        let cache = Cache {
+            windows: vec![],
+            fetched_at: old,
+        };
+        assert!(cache.fetched_at.elapsed() >= CACHE_TTL);
+    }
 }

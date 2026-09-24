@@ -9,6 +9,7 @@ use nursearch_proto::{
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
+use std::time::{Duration, Instant};
 
 /// The launcher's side of the plugin channel: where contributions, view
 /// renders, and host-capability calls are delivered. Implemented by the UI
@@ -27,16 +28,48 @@ pub trait HostSink {
     fn host_call(&self, plugin_id: &str, call: HostCall) -> HostOutcome;
 }
 
+/// How many rapid exits within the backoff window trigger a permanent disable.
+const CRASH_THRESHOLD: usize = 3;
+/// Window during which consecutive exits count toward the crash threshold.
+const CRASH_WINDOW: Duration = Duration::from_secs(60);
+/// How long a plugin must stay up before a subsequent exit is considered clean.
+const HEALTHY_UPTIME: Duration = Duration::from_secs(30);
+
 struct Running {
     process: PluginProcess,
     ready: bool,
+    started_at: Instant,
+}
+
+/// Per-plugin failure tracking for crash-loop backoff.
+struct FailureRecord {
+    /// Timestamps of recent exits that counted as crashes.
+    exits: Vec<Instant>,
+}
+
+impl FailureRecord {
+    fn new() -> Self {
+        Self { exits: Vec::new() }
+    }
+
+    /// Record a rapid exit and return true if the plugin should be disabled.
+    fn record_crash(&mut self) -> bool {
+        let now = Instant::now();
+        // Expire entries outside the window.
+        self.exits.retain(|t| now.duration_since(*t) < CRASH_WINDOW);
+        self.exits.push(now);
+        self.exits.len() >= CRASH_THRESHOLD
+    }
 }
 
 struct HostInner {
     plugins: Vec<Plugin>,
     running: HashMap<String, Running>,
-    /// Plugins disabled for this session (protocol mismatch or malformed output).
+    /// Plugins disabled for this session (protocol mismatch, malformed output,
+    /// or persistent crash-loop).
     disabled: HashSet<String>,
+    /// Per-plugin crash counters for backoff.
+    failures: HashMap<String, FailureRecord>,
     sink: Rc<dyn HostSink>,
 }
 
@@ -56,6 +89,7 @@ impl PluginHost {
                 plugins,
                 running: HashMap::new(),
                 disabled: HashSet::new(),
+                failures: HashMap::new(),
                 sink,
             })),
         }
@@ -145,13 +179,36 @@ impl PluginHost {
         let on_exit = {
             let weak = weak.clone();
             Rc::new(move |pid: &str| {
-                if let Some(inner) = weak.upgrade() {
-                    inner.borrow_mut().running.remove(pid);
-                    log::info!("plugin '{pid}' exited");
+                if let Some(inner_rc) = weak.upgrade() {
+                    let mut inner = inner_rc.borrow_mut();
+                    let uptime = inner
+                        .running
+                        .get(pid)
+                        .map(|r| r.started_at.elapsed())
+                        .unwrap_or_default();
+                    inner.running.remove(pid);
+                    // A clean exit after long uptime is not a crash.
+                    if uptime >= HEALTHY_UPTIME {
+                        log::info!("plugin '{pid}' exited cleanly after {uptime:.1?}");
+                        return;
+                    }
+                    log::info!("plugin '{pid}' exited after {uptime:.1?} (rapid exit)");
+                    let disable = inner
+                        .failures
+                        .entry(pid.to_string())
+                        .or_insert_with(FailureRecord::new)
+                        .record_crash();
+                    if disable {
+                        inner.disabled.insert(pid.to_string());
+                        log::warn!(
+                            "disabled plugin '{pid}': {CRASH_THRESHOLD} rapid exits \
+                             within {CRASH_WINDOW:.0?}"
+                        );
+                    }
                 }
             })
         };
-        // Malformed plugin output is fatal: terminate and disable the plugin.
+        // Malformed plugin output is a protocol error: terminate and disable immediately.
         let on_error = Rc::new(move |pid: &str| {
             if let Some(inner) = weak.upgrade() {
                 let mut inner = inner.borrow_mut();
@@ -182,14 +239,43 @@ impl PluginHost {
                     Running {
                         process,
                         ready: false,
+                        started_at: Instant::now(),
                     },
                 );
                 true
             }
             Err(err) => {
                 log::warn!("could not start plugin '{id_owned}': {err}");
+                // Spawn failures count the same as rapid exits.
+                let mut inner = self.inner.borrow_mut();
+                let disable = inner
+                    .failures
+                    .entry(id_owned.clone())
+                    .or_insert_with(FailureRecord::new)
+                    .record_crash();
+                if disable {
+                    inner.disabled.insert(id_owned.clone());
+                    log::warn!("disabled plugin '{id_owned}': {CRASH_THRESHOLD} spawn failures");
+                }
                 false
             }
+        }
+    }
+
+    /// Send `Shutdown` to every running plugin and then force-kill any that
+    /// remain. Called from the application's shutdown hook.
+    pub fn shutdown(&self) {
+        let inner = self.inner.borrow();
+        for (id, running) in &inner.running {
+            let _ = running.process.send(&HostMessage::Shutdown);
+            log::debug!("sent Shutdown to plugin '{id}'");
+        }
+        // Force-kill after giving plugins a chance to exit gracefully: we don't
+        // block here because we're already in the GTK shutdown path. kill() is
+        // idempotent and will no-op for processes that already exited.
+        for (id, running) in &inner.running {
+            running.process.kill();
+            log::debug!("killed plugin '{id}'");
         }
     }
 

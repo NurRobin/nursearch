@@ -94,6 +94,10 @@ impl PluginProcess {
     }
 }
 
+/// Maximum number of bytes accepted for a single message line (4 MiB).
+/// Exceeding this is treated as a protocol violation and disables the plugin.
+const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
+
 fn spawn_read_loop(
     id: String,
     stdout: gio::InputStream,
@@ -109,6 +113,17 @@ fn spawn_read_loop(
                 Ok(Some(bytes)) => {
                     if bytes.is_empty() {
                         continue; // blank line
+                    }
+                    // Enforce the message size cap before decoding.
+                    if bytes.len() > MAX_LINE_BYTES {
+                        log::warn!(
+                            "plugin '{id}' sent an oversized message ({} bytes > {MAX_LINE_BYTES}); \
+                             treating as protocol violation",
+                            bytes.len()
+                        );
+                        alive.set(false);
+                        on_error(&id);
+                        return;
                     }
                     let line = String::from_utf8_lossy(&bytes);
                     match decode::<PluginMessage>(&line) {

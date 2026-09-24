@@ -53,12 +53,28 @@ impl Plugin for Clipboard {
     }
 }
 
+/// Maximum byte size for a single clipboard entry (64 KiB).
+const MAX_ENTRY_BYTES: usize = 64 * 1024;
+
 /// Capture the current clipboard into history if it is new.
+///
+/// Skips the entry when:
+/// - `wl-paste --list-types` includes `x-kde-passwordManagerHint` (KeePassXC /
+///   KDE secret convention — value "secret" signals a password manager entry).
+/// - The clipboard content exceeds MAX_ENTRY_BYTES (prevents history bloat).
 fn capture(host: &mut dyn HostApi) {
+    // Refuse to store content that a password manager has marked as secret.
+    if clipboard_has_secret_hint() {
+        return;
+    }
     let Some(current) = wl_paste() else {
         return;
     };
     if current.trim().is_empty() {
+        return;
+    }
+    // Drop oversized entries so the history can't bloat.
+    if current.len() > MAX_ENTRY_BYTES {
         return;
     }
     let mut history = load(host);
@@ -69,6 +85,18 @@ fn capture(host: &mut dyn HostApi) {
     history.insert(0, current);
     history.truncate(MAX_ENTRIES);
     save(host, &history);
+}
+
+/// Returns true if the clipboard advertises the KDE/KeePassXC secret hint type.
+fn clipboard_has_secret_hint() -> bool {
+    let Ok(output) = Command::new("wl-paste").arg("--list-types").output() else {
+        return false;
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines().any(|line| {
+        line.trim()
+            .eq_ignore_ascii_case("x-kde-passwordManagerHint")
+    })
 }
 
 fn list_view(host: &mut dyn HostApi, filter: &str) -> View {

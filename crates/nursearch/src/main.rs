@@ -509,9 +509,12 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
     let host = PluginHost::new(Rc::new(ui.clone()) as Rc<dyn plugin::HostSink>);
     {
         let mut st = state.borrow_mut();
-        st.host = Some(host);
+        st.host = Some(host.clone());
         st.active_list = Some(list.clone());
     }
+    app.connect_shutdown(move |_| {
+        host.shutdown();
+    });
 
     dispatch_query(&state, &entry, &list, &empty);
 
