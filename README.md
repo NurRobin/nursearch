@@ -107,8 +107,8 @@ cp nursearch-autostart.desktop ~/.config/autostart/nursearch.desktop
 Version tags publish the Arch package to the AUR:
 
 ```sh
-git tag v0.2.3
-git push origin v0.2.3
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 The GitHub repository needs an `AUR_SSH_PRIVATE_KEY` secret for an SSH key that
