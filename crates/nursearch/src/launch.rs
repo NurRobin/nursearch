@@ -1,6 +1,7 @@
 use crate::desktop::DesktopEntry;
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use gtk4::glib;
 use log::{debug, error, info, warn};
 use std::io;
 use std::os::unix::process::CommandExt;
@@ -28,7 +29,18 @@ pub fn launch(app: &DesktopEntry) -> io::Result<()> {
             app.path.display()
         );
 
-        return match info.launch(&[], gio::AppLaunchContext::NONE) {
+        // D-Bus activated apps are started by the bus, never by us, so the PID
+        // callback does not fire for them. Everything GIO spawns itself (e.g.
+        // terminal apps) is moved out of the daemon's cgroup into its own scope.
+        let app_id = desktop_file_id(&app.path);
+        let result = info.launch_uris_as_manager(
+            &[],
+            gio::AppLaunchContext::NONE,
+            glib::SpawnFlags::SEARCH_PATH,
+            None,
+            Some(&mut |_, pid| move_into_scope(&app_id, pid.0)),
+        );
+        return match result {
             Ok(()) => {
                 info!("GIO launch accepted: {}", app.name);
                 Ok(())
@@ -74,7 +86,86 @@ fn launch_exec(app: &DesktopEntry) -> io::Result<()> {
         }
     };
     debug!("parsed Exec command for {}: {:?}", app.name, args);
-    spawn_app(&args)
+    spawn_app(&args, &desktop_file_id(&app.path))
+}
+
+/// Start a long-running program (e.g. a System Settings page) detached from
+/// the daemon, like an app. `app_id` names its systemd unit.
+pub fn spawn_detached<S: AsRef<str>>(args: &[S], app_id: &str) -> io::Result<()> {
+    let args: Vec<String> = args.iter().map(|arg| arg.as_ref().to_string()).collect();
+    spawn_app(&args, app_id)
+}
+
+/// Desktop file ID without the `.desktop` suffix, e.g. `org.kde.dolphin`.
+fn desktop_file_id(path: &Path) -> String {
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string())
+}
+
+/// Unit name following the systemd XDG application convention,
+/// `app-<launcher>-<ApplicationID>-<RANDOM>.<suffix>`, so system monitors
+/// show the app by name. Characters systemd reserves (including `-`, the
+/// field separator) are `\xNN`-escaped as `systemd-escape` does.
+fn unit_name(app_id: &str, unique: &str, suffix: &str) -> String {
+    let mut escaped = String::with_capacity(app_id.len());
+    for (index, byte) in app_id.bytes().enumerate() {
+        let keep = byte.is_ascii_alphanumeric()
+            || byte == b':'
+            || byte == b'_'
+            || (byte == b'.' && index > 0);
+        if keep {
+            escaped.push(byte as char);
+        } else {
+            escaped.push_str(&format!("\\x{byte:02x}"));
+        }
+    }
+    format!("app-nursearch-{escaped}-{unique}.{suffix}")
+}
+
+/// A unit-name suffix unique for this daemon's lifetime.
+fn unique_suffix() -> String {
+    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{:x}{count:x}", std::process::id())
+}
+
+/// Move an already running process into a new transient scope of the systemd
+/// user manager, taking it out of the daemon's cgroup. Asynchronous and best
+/// effort: on failure the app keeps running, just attributed to NurSearch.
+fn move_into_scope(app_id: &str, pid: i32) {
+    let Ok(pid) = u32::try_from(pid) else {
+        return;
+    };
+    let bus = match gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) {
+        Ok(bus) => bus,
+        Err(err) => {
+            warn!("no session bus to move pid {pid} into a scope: {err}");
+            return;
+        }
+    };
+    let name = unit_name(app_id, &pid.to_string(), "scope");
+    let properties: Vec<(String, glib::Variant)> = vec![
+        ("PIDs".to_string(), vec![pid].to_variant()),
+        ("CollectMode".to_string(), "inactive-or-failed".to_variant()),
+    ];
+    let auxiliary: Vec<(String, Vec<(String, glib::Variant)>)> = Vec::new();
+    let parameters = (name.as_str(), "fail", properties, auxiliary).to_variant();
+    bus.call(
+        Some("org.freedesktop.systemd1"),
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+        "StartTransientUnit",
+        Some(&parameters),
+        None,
+        gio::DBusCallFlags::NONE,
+        5_000,
+        gio::Cancellable::NONE,
+        move |result| match result {
+            Ok(_) => info!("moved pid {pid} into {name}"),
+            Err(err) => warn!("could not move pid {pid} into its own scope: {err}"),
+        },
+    );
 }
 
 /// Launch an application command fully detached from the NurSearch daemon.
@@ -90,9 +181,9 @@ fn launch_exec(app: &DesktopEntry) -> io::Result<()> {
 ///     app's traffic showing up as constant NurSearch up/download).
 ///
 /// Falls back to a plain detached spawn when systemd is unavailable.
-fn spawn_app(args: &[String]) -> io::Result<()> {
+fn spawn_app(args: &[String], app_id: &str) -> io::Result<()> {
     if Path::new("/run/systemd/system").exists() {
-        match run_via_systemd(args) {
+        match run_via_systemd(args, app_id) {
             Ok(()) => return Ok(()),
             Err(err) => warn!("systemd-run launch failed, spawning directly: {err}"),
         }
@@ -104,9 +195,12 @@ fn spawn_app(args: &[String]) -> io::Result<()> {
 /// itself (a fast D-Bus registration that exits once the user manager has
 /// taken ownership) so the helper is reaped rather than left as a zombie, and
 /// so a registration failure can fall back to a direct spawn.
-fn run_via_systemd(args: &[String]) -> io::Result<()> {
+fn run_via_systemd(args: &[String], app_id: &str) -> io::Result<()> {
+    let unit = unit_name(app_id, &unique_suffix(), "service");
     let status = Command::new("systemd-run")
-        .args(["--user", "--collect", "--quiet", "--"])
+        .args(["--user", "--collect", "--quiet"])
+        .arg(format!("--unit={unit}"))
+        .arg("--")
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -157,8 +251,9 @@ pub fn paste_into_focused() -> io::Result<()> {
         .unwrap_or_else(|| io::Error::other("no paste tool (wtype/ydotool/xdotool) available")))
 }
 
-/// Spawn a detached command, discarding its standard streams. Shared by the
-/// desktop-entry Exec fallback and by built-in system actions.
+/// Spawn a short-lived helper command (system actions, paste helpers, and the
+/// fallback when systemd is unavailable), discarding its standard streams. It
+/// stays a child of the daemon; long-running programs go through [`spawn_app`].
 pub fn run_command<S: AsRef<str>>(args: &[S]) -> io::Result<()> {
     let Some((program, rest)) = args.split_first() else {
         error!("cannot run an empty command");
@@ -177,13 +272,37 @@ pub fn run_command<S: AsRef<str>>(args: &[S]) -> io::Result<()> {
         .process_group(0);
 
     match command.spawn() {
-        Ok(child) => {
+        Ok(mut child) => {
             info!("command spawned: pid={}, program={program:?}", child.id());
+            // Reap it, or every finished command lingers as a zombie for the
+            // daemon's whole lifetime. Commands run here are short-lived.
+            std::thread::spawn(move || child.wait());
             Ok(())
         }
         Err(err) => {
             error!("command failed: program={program:?}, args={rest:?}, error={err}");
             Err(err)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unit_name;
+
+    #[test]
+    fn unit_names_escape_reserved_characters() {
+        assert_eq!(
+            unit_name("org.kde.dolphin", "1f", "scope"),
+            "app-nursearch-org.kde.dolphin-1f.scope"
+        );
+        assert_eq!(
+            unit_name("t3code-nightly", "2a", "service"),
+            "app-nursearch-t3code\\x2dnightly-2a.service"
+        );
+        assert_eq!(
+            unit_name(".hidden app", "1", "scope"),
+            "app-nursearch-\\x2ehidden\\x20app-1.scope"
+        );
     }
 }

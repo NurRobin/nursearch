@@ -17,8 +17,13 @@ const MAX_RESULTS: usize = 12;
 pub enum Action {
     /// Launch a discovered desktop application.
     Launch(DesktopEntry),
-    /// Run a fixed command (system actions).
+    /// Run a short-lived fixed command (system actions).
     Run(Vec<String>),
+    /// Start a long-running program in its own systemd unit, like an app.
+    Detached {
+        command: Vec<String>,
+        app_id: String,
+    },
     /// Copy text to the clipboard (calculator results).
     Copy(String),
     /// Enter a plugin view session for this item.
@@ -190,7 +195,10 @@ fn settings_results(
                 kind: Kind::Settings,
                 score,
                 history_key: Some(key),
-                action: Action::Run(vec!["systemsettings".to_string(), page.id.clone()]),
+                action: Action::Detached {
+                    command: vec!["systemsettings".to_string(), page.id.clone()],
+                    app_id: "systemsettings".to_string(),
+                },
             })
         })
         .collect()
@@ -431,7 +439,7 @@ mod tests {
 
         assert_eq!(results[0].kind, Kind::Settings);
         assert!(
-            matches!(&results[0].action, Action::Run(cmd) if cmd == &["systemsettings", "kcm_kscreen"])
+            matches!(&results[0].action, Action::Detached { command, .. } if command == &["systemsettings", "kcm_kscreen"])
         );
     }
 

@@ -782,6 +782,7 @@ fn perform_action(result: &SearchResult, window: &gtk::ApplicationWindow) -> std
     match &result.action {
         Action::Launch(app) => launch::launch(app),
         Action::Run(command) => launch::run_command(command),
+        Action::Detached { command, app_id } => launch::spawn_detached(command, app_id),
         Action::Copy(text) => {
             window.clipboard().set_text(text);
             Ok(())
