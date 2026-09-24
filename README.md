@@ -131,9 +131,11 @@ for parsed `Exec` commands.
 
 ## Theming
 
-On first run NurSearch writes its default stylesheet to `~/.config/nursearch/style.css`. Edit that
-file to recolor or restyle the launcher; changes are applied live without restarting. The built-in
-stylesheet is always loaded as a base, so removing a rule from your copy reverts it to the default.
+The built-in theme (`crates/nursearch/src/style.css`) is always loaded. On first run NurSearch
+creates `~/.config/nursearch/style.css` as a commented template; rules you add there are applied on
+top and reload live on save. Everything you do not override follows the built-in theme, including
+its updates. An untouched full copy of the theme written by versions up to 0.3.0 is replaced by the
+template automatically; edited files are left alone.
 
 ## Known Limitations
 

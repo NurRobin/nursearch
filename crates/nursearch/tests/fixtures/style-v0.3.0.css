@@ -1,8 +1,8 @@
 /* NurSearch theme.
  *
- * This built-in theme is always loaded. Overrides go in
- * ~/.config/nursearch/style.css (created as a commented template on first run),
- * which is applied on top and reloads live on save.
+ * This file is copied to ~/.config/nursearch/style.css on first run. Edit that
+ * copy to customize the launcher; changes apply live. The built-in version here
+ * is always loaded as a base, so deleting a rule in your copy reverts it.
  *
  * Palette: warm charcoal surface with a single gold accent. */
 
@@ -10,49 +10,34 @@ window {
     background: transparent;
 }
 
-/* The panel appears without a fade-in: a launcher should feel instant, and
- * typing starts before any animation would finish.
- *
- * Radii are concentric: inner elements use the panel radius minus its padding. */
+/* Fade the panel in when it appears. */
+@keyframes launcher-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
 .launcher-shell {
     background: #1b1c20;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 22px;
-    padding: 10px;
+    border-radius: 18px;
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    animation: launcher-in 130ms ease-out;
 }
 
 .search-entry {
-    min-height: 52px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    outline: none;
-    box-shadow: none;
-    background: #25272c;
+    min-height: 54px;
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #26282d;
     color: #f4efe6;
     font-size: 21px;
-    padding: 4px 14px;
+    padding: 6px 14px;
     caret-color: #e0a64a;
 }
 
-/* The entry always has focus in a launcher, so focus gets no extra ring; the
- * gold accent is reserved for the selected result. */
-.search-entry:focus,
-.search-entry:focus-within {
-    border-color: rgba(255, 255, 255, 0.10);
-    outline: none;
-    box-shadow: none;
-}
-
-.search-entry text {
-    background: transparent;
-    outline: none;
-    box-shadow: none;
-}
-
-.search-entry text selection {
-    background: rgba(224, 166, 74, 0.35);
-    color: #fbf6ec;
+.search-entry:focus {
+    border-color: #e0a64a;
+    box-shadow: 0 0 0 2px rgba(224, 166, 74, 0.22);
 }
 
 .search-entry image {
@@ -84,9 +69,11 @@ scrollbar slider:hover {
     min-height: 58px;
     margin: 1px 0;
     padding: 0;
-    border-radius: 12px;
+    border-radius: 11px;
     background: transparent;
-    outline: none;
+    /* Accent bar drawn via a left border that stays invisible until selected. */
+    border-left: 3px solid transparent;
+    transition: background 120ms ease, border-color 120ms ease;
 }
 
 .result-list-row:hover {
@@ -94,9 +81,8 @@ scrollbar slider:hover {
 }
 
 .result-list-row:selected {
-    background: rgba(224, 166, 74, 0.13);
-    /* Inset accent line: follows the row's rounded corners, unlike a border. */
-    box-shadow: inset 0 0 0 1px rgba(224, 166, 74, 0.28);
+    background: rgba(224, 166, 74, 0.14);
+    border-left-color: #e0a64a;
 }
 
 .result-row {
@@ -146,7 +132,7 @@ scrollbar slider:hover {
 
 /* Footer with keyboard hints. */
 .hint-bar {
-    padding: 2px 8px 0 10px;
+    padding: 4px 6px 2px 8px;
 }
 
 .hint-item {

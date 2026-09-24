@@ -314,7 +314,13 @@ mod tests {
     #[test]
     fn app_name_prefix_outranks_system_keyword_prefix() {
         let db = HistoryDb::open_in_memory().unwrap();
-        let apps = vec![test_app("Restic Browser", None, None, &[], "/tmp/restic.desktop")];
+        let apps = vec![test_app(
+            "Restic Browser",
+            None,
+            None,
+            &[],
+            "/tmp/restic.desktop",
+        )];
 
         let results = search(&apps, "res", &db.snapshot("res"));
 
@@ -330,7 +336,12 @@ mod tests {
                 !command.command.contains(&"systemctl"),
                 "{id} must ask for confirmation instead of acting directly"
             );
-            assert!(command.command.iter().any(|arg| arg.contains("LogoutPrompt")));
+            assert!(
+                command
+                    .command
+                    .iter()
+                    .any(|arg| arg.contains("LogoutPrompt"))
+            );
         }
     }
 

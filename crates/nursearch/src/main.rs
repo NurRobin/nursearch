@@ -273,7 +273,7 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
 
     let root = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
+        .spacing(10)
         .margin_top(16)
         .margin_bottom(16)
         .margin_start(16)

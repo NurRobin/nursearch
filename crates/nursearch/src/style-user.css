@@ -1,0 +1,14 @@
+/* NurSearch theme overrides.
+ *
+ * Rules here are applied on top of the built-in theme and reload live on save.
+ * Only add what you want to change; everything else follows the built-in
+ * theme, including its future updates. The full built-in theme is at
+ * https://github.com/NurRobin/nursearch/blob/main/crates/nursearch/src/style.css
+ *
+ * Example: a blue accent instead of gold.
+ *
+ * .result-list-row:selected {
+ *     background: rgba(90, 150, 240, 0.14);
+ *     box-shadow: inset 0 0 0 1px rgba(90, 150, 240, 0.30);
+ * }
+ */

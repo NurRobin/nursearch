@@ -10,8 +10,19 @@ use log::{debug, warn};
 use std::fs;
 use std::path::PathBuf;
 
-/// Built-in stylesheet. Mirrored to disk on first run so it can be customized.
+/// Built-in stylesheet, always loaded as the base layer.
 pub const DEFAULT_CSS: &str = include_str!("style.css");
+
+/// Starter file written to `~/.config/nursearch/style.css`: comments only, so
+/// the built-in theme (and its updates) apply until the user adds overrides.
+const USER_CSS_TEMPLATE: &str = include_str!("style-user.css");
+
+/// FNV-1a hashes of built-in themes that older versions copied verbatim into
+/// the user file. Such an untouched copy would pin the old look forever, so it
+/// is swapped for [`USER_CSS_TEMPLATE`]; edited files never match and are kept.
+const LEGACY_DEFAULT_HASHES: &[u64] = &[
+    0x500f_2cf6_9c62_ddbc, // v0.2.x – v0.3.0
+];
 
 /// `~/.config/nursearch`, honoring `XDG_CONFIG_HOME`.
 pub fn config_dir() -> PathBuf {
@@ -53,19 +64,38 @@ pub fn install_css() -> Option<gio::FileMonitor> {
     Some(monitor)
 }
 
-/// Write the default stylesheet to the config dir on first run so users have a
-/// starting point to edit. Returns the path either way.
+/// Write the override template to the config dir on first run so users have a
+/// starting point, and replace an untouched copy of an old built-in theme.
+/// Returns the path either way.
 fn ensure_user_style() -> PathBuf {
     let dir = config_dir();
     let path = dir.join("style.css");
-    if !path.exists() {
-        if let Err(err) = fs::create_dir_all(&dir).and_then(|()| fs::write(&path, DEFAULT_CSS)) {
-            warn!("could not write default style.css: {err}");
+    let replace = match fs::read(&path) {
+        Ok(existing) => is_legacy_default(&existing),
+        Err(_) => !path.exists(),
+    };
+    if replace {
+        if let Err(err) =
+            fs::create_dir_all(&dir).and_then(|()| fs::write(&path, USER_CSS_TEMPLATE))
+        {
+            warn!("could not write style.css template: {err}");
         } else {
-            debug!("wrote default style.css to {}", path.display());
+            debug!("wrote style.css template to {}", path.display());
         }
     }
     path
+}
+
+/// Whether `css` is a byte-identical copy of a previously shipped built-in theme.
+fn is_legacy_default(css: &[u8]) -> bool {
+    LEGACY_DEFAULT_HASHES.contains(&fnv1a(css))
+}
+
+/// 64-bit FNV-1a; stable across Rust versions, unlike `DefaultHasher`.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 fn load_user_style(provider: &gtk::CssProvider, path: &PathBuf) {
@@ -74,5 +104,22 @@ fn load_user_style(provider: &gtk::CssProvider, path: &PathBuf) {
     } else {
         // File removed: fall back to the built-in base only.
         provider.load_from_data("");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_untouched_legacy_theme_only() {
+        let legacy = include_bytes!("../tests/fixtures/style-v0.3.0.css");
+        assert!(is_legacy_default(legacy));
+
+        let mut edited = legacy.to_vec();
+        edited.extend_from_slice(b"\n.result-name { color: red; }\n");
+        assert!(!is_legacy_default(&edited));
+        assert!(!is_legacy_default(USER_CSS_TEMPLATE.as_bytes()));
+        assert!(!is_legacy_default(DEFAULT_CSS.as_bytes()));
     }
 }
