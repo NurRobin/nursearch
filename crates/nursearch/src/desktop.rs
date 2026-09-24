@@ -58,29 +58,43 @@ struct ExecContext<'a> {
 }
 
 pub fn discover_apps() -> Vec<DesktopEntry> {
-    let mut seen_dirs = HashSet::new();
-    let mut seen_files = HashSet::new();
-    let mut apps = Vec::new();
-    let desktop_envs = current_desktops();
+    discover_in(&application_dirs(), &current_desktops())
+}
 
-    for dir in application_dirs() {
+/// Scan `dirs` in priority order. Entries are identified by their desktop
+/// file ID (the file name), and the first directory that has an ID wins, as
+/// the XDG spec requires: a copy in `~/.local/share/applications` replaces
+/// the system entry instead of showing up next to it, and a hidden or
+/// `NoDisplay` copy hides the app entirely.
+fn discover_in(dirs: &[PathBuf], desktop_envs: &[String]) -> Vec<DesktopEntry> {
+    let mut seen_dirs = HashSet::new();
+    let mut seen_ids = HashSet::new();
+    let mut apps = Vec::new();
+
+    for dir in dirs {
         if !seen_dirs.insert(dir.clone()) {
             continue;
         }
 
-        let Ok(entries) = fs::read_dir(&dir) else {
+        let Ok(entries) = fs::read_dir(dir) else {
             continue;
         };
 
-        for entry in entries.flatten() {
-            let path = entry.path();
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+        paths.sort();
+        for path in paths {
             if path.extension().and_then(|ext| ext.to_str()) != Some("desktop") {
                 continue;
             }
-            if !seen_files.insert(path.clone()) {
+            let Some(id) = path.file_name().map(|name| name.to_os_string()) else {
+                continue;
+            };
+            // Claim the ID before parsing: an entry that parses to "not shown"
+            // must still mask lower-priority copies of the same app.
+            if !seen_ids.insert(id) {
                 continue;
             }
-            if let Some(app) = parse_desktop_file(&path, &desktop_envs) {
+            if let Some(app) = parse_desktop_file(&path, desktop_envs) {
                 apps.push(app);
             }
         }
@@ -90,23 +104,40 @@ pub fn discover_apps() -> Vec<DesktopEntry> {
     apps
 }
 
+/// Application directories, highest priority first: `$XDG_DATA_HOME`, then
+/// `$XDG_DATA_DIRS` in order (default `/usr/local/share:/usr/share`).
 pub(crate) fn application_dirs() -> Vec<PathBuf> {
-    let mut dirs = vec![
-        PathBuf::from("/usr/share/applications"),
-        PathBuf::from("/usr/local/share/applications"),
-    ];
+    let mut dirs = Vec::new();
 
-    if let Ok(home) = env::var("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/share/applications"));
-    }
-
-    if let Ok(xdg_dirs) = env::var("XDG_DATA_DIRS") {
-        for dir in xdg_dirs.split(':').filter(|dir| !dir.is_empty()) {
-            dirs.push(PathBuf::from(dir).join("applications"));
+    match env::var("XDG_DATA_HOME") {
+        Ok(data_home) if !data_home.is_empty() => dirs.push(PathBuf::from(data_home)),
+        _ => {
+            if let Ok(home) = env::var("HOME") {
+                dirs.push(PathBuf::from(home).join(".local/share"));
+            }
         }
     }
 
-    dirs
+    let data_dirs = env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|dirs| !dirs.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_string());
+    dirs.extend(
+        data_dirs
+            .split(':')
+            .filter(|dir| !dir.is_empty())
+            .map(PathBuf::from),
+    );
+    // Some sessions set XDG_DATA_DIRS without the system defaults.
+    for fallback in ["/usr/local/share", "/usr/share"] {
+        if !dirs.iter().any(|dir| dir == Path::new(fallback)) {
+            dirs.push(PathBuf::from(fallback));
+        }
+    }
+
+    dirs.into_iter()
+        .map(|dir| dir.join("applications"))
+        .collect()
 }
 
 fn current_desktops() -> Vec<String> {
@@ -568,5 +599,31 @@ mod tests {
         .unwrap();
 
         assert!(app.exec_args().is_err());
+    }
+
+    #[test]
+    fn higher_priority_copy_replaces_and_masks_lower_ones() {
+        let root = std::env::temp_dir().join(format!("nursearch-dedup-{}", std::process::id()));
+        let user = root.join("user");
+        let system = root.join("system");
+        fs::create_dir_all(&user).unwrap();
+        fs::create_dir_all(&system).unwrap();
+        let entry = |name: &str, extra: &str| {
+            format!("[Desktop Entry]\nType=Application\nName={name}\nExec=true\n{extra}")
+        };
+        fs::write(user.join("firefox.desktop"), entry("Firefox (mine)", "")).unwrap();
+        fs::write(system.join("firefox.desktop"), entry("Firefox", "")).unwrap();
+        fs::write(
+            user.join("hidden.desktop"),
+            entry("Hidden", "NoDisplay=true"),
+        )
+        .unwrap();
+        fs::write(system.join("hidden.desktop"), entry("Hidden", "")).unwrap();
+
+        let apps = discover_in(&[user, system], &[]);
+        let names: Vec<&str> = apps.iter().map(|app| app.name.as_str()).collect();
+
+        assert_eq!(names, vec!["Firefox (mine)"]);
+        fs::remove_dir_all(root).unwrap();
     }
 }

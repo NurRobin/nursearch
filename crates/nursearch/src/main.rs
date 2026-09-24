@@ -527,19 +527,28 @@ fn watch_app_dirs(
                 let entry = entry.clone();
                 let list = list.clone();
                 let empty = empty.clone();
-                glib::timeout_add_local_once(Duration::from_millis(300), move || {
+                // Package upgrades and Steam touch many files in bursts; wait
+                // for the burst, then parse on a worker thread so a rescan of
+                // thousands of entries never stalls typing.
+                glib::timeout_add_local_once(Duration::from_millis(700), move || {
                     pending.set(false);
                     debug!("reloading apps after .desktop change");
-                    let in_session = {
-                        let mut st = state.borrow_mut();
-                        st.apps = discover_apps();
-                        st.session.is_some()
-                    };
-                    // Don't disturb an active plugin session; the refreshed apps
-                    // are picked up the next time the root screen is shown.
-                    if !in_session {
-                        dispatch_query(&state, &entry, &list, &empty);
-                    }
+                    glib::spawn_future_local(async move {
+                        let Ok(apps) = gio::spawn_blocking(discover_apps).await else {
+                            warn!("rescanning applications failed");
+                            return;
+                        };
+                        let in_session = {
+                            let mut st = state.borrow_mut();
+                            st.apps = apps;
+                            st.session.is_some()
+                        };
+                        // Don't disturb an active plugin session; the refreshed apps
+                        // are picked up the next time the root screen is shown.
+                        if !in_session {
+                            dispatch_query(&state, &entry, &list, &empty);
+                        }
+                    });
                 });
             });
             Some(monitor)
