@@ -51,6 +51,22 @@ tr!(
 );
 tr!(badge_system, en = "System", de = "System");
 tr!(badge_settings, en = "Settings", de = "Einstellungen");
+tr!(badge_open, en = "Open", de = "Öffnen");
+tr!(
+    open_url_hint,
+    en = "Open in the browser",
+    de = "Im Browser öffnen"
+);
+tr!(
+    open_path_hint,
+    en = "Open with the default app",
+    de = "Mit der Standard-App öffnen"
+);
+tr!(
+    run_command_hint,
+    en = "Run as a shell command",
+    de = "Als Shell-Befehl ausführen"
+);
 
 tr!(hint_open, en = "Open", de = "Öffnen");
 tr!(hint_navigate, en = "Navigate", de = "Navigieren");
@@ -87,6 +103,16 @@ pub fn system_subtitle(id: &str) -> &'static str {
         ("system:shutdown", Lang::En) => "Power off the system",
         ("system:shutdown", Lang::De) => "System ausschalten",
         _ => "",
+    }
+}
+
+/// User-facing error for an invalid `config.toml`.
+pub fn error_settings(err: &str) -> String {
+    match lang() {
+        Lang::En => format!("config.toml is invalid, using the previous settings: {err}"),
+        Lang::De => {
+            format!("config.toml ist fehlerhaft, die bisherigen Einstellungen bleiben aktiv: {err}")
+        }
     }
 }
 

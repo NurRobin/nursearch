@@ -14,6 +14,10 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
   comment matching
 - Inline calculator: type an expression (e.g. `2 + 3 * 4`, `2,5 × 4`, `2^10`); `Enter` copies the
   result. A decimal comma is answered with a comma
+- Direct targets: paste a URL (`https://…`, `github.com/…`) or a path (`~/Downloads`, `/etc`) and
+  press Enter to open it; `> command` runs a shell command line
+- Quicklinks from `~/.config/nursearch/config.toml`: `aw wayland` searches the Arch Wiki, `gh`,
+  `aur` and `yt` are preset, and you can add your own
 - KDE System Settings pages as results: `bluetooth`, `hdr` or `mouse` opens the matching page,
   found through the keywords each settings module ships
 - Built-in system actions: lock, log out, suspend, reboot, shut down (matched by word start).
@@ -139,6 +143,29 @@ creates `~/.config/nursearch/style.css` as a commented template; rules you add t
 top and reload live on save. Everything you do not override follows the built-in theme, including
 its updates. An untouched full copy of the theme written by versions up to 0.3.0 is replaced by the
 template automatically; edited files are left alone.
+
+## Settings
+
+On first run NurSearch writes a commented `~/.config/nursearch/config.toml`. Changes apply the next
+time the launcher opens (except `window.position`, which needs a restart):
+
+```toml
+[window]
+position = "center"   # or "top" (upper part of the screen, via layer-shell)
+width = 720
+top_margin = 160      # used with position = "top"
+
+[search]
+max_results = 12
+
+[[quicklinks]]        # "aw wayland" opens the Arch Wiki search
+keyword = "aw"
+name = "Arch Wiki"
+url = "https://wiki.archlinux.org/index.php?search={query}"
+```
+
+A quicklink without `{query}` in its URL is a bookmark opened by its bare keyword. Plugin keywords
+(`c`, `e`, `f`, `g`, `w`, …) take precedence over quicklinks with the same keyword.
 
 ## Known Limitations
 

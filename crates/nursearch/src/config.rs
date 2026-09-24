@@ -1,14 +1,16 @@
 //! Theming and configuration. A built-in stylesheet is always applied as the
 //! base, and a user file at `~/.config/nursearch/style.css` is overlaid on top
-//! and watched for changes so edits take effect without restarting.
+//! and watched for changes so edits take effect without restarting. Behaviour
+//! settings and quicklinks live in `~/.config/nursearch/config.toml`.
 
 use gtk::gdk;
 use gtk::gio;
 use gtk::prelude::*;
 use gtk4 as gtk;
 use log::{debug, warn};
+use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Built-in stylesheet, always loaded as the base layer.
 pub const DEFAULT_CSS: &str = include_str!("style.css");
@@ -112,6 +114,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn settings_template_parses_to_defaults_plus_quicklinks() {
+        let settings = Settings::parse(SETTINGS_TEMPLATE).unwrap();
+        assert_eq!(settings.window, WindowSettings::default());
+        assert_eq!(settings.search, SearchSettings::default());
+        assert!(settings.quicklinks.iter().any(|link| link.keyword == "aw"));
+    }
+
+    #[test]
+    fn partial_settings_keep_defaults_and_clamp() {
+        let settings =
+            Settings::parse("[search]\nmax_results = 500\n[window]\nposition = \"top\"").unwrap();
+        assert_eq!(settings.search.max_results, 50);
+        assert_eq!(settings.window.position, Position::Top);
+        assert_eq!(settings.window.width, 720);
+        assert!(Settings::parse("").unwrap().quicklinks.is_empty());
+    }
+
+    #[test]
+    fn unknown_keys_are_reported() {
+        assert!(Settings::parse("[window]\nwidht = 800").is_err());
+    }
+
+    #[test]
     fn detects_untouched_legacy_theme_only() {
         let legacy = include_bytes!("../tests/fixtures/style-v0.3.0.css");
         assert!(is_legacy_default(legacy));
@@ -121,5 +146,113 @@ mod tests {
         assert!(!is_legacy_default(&edited));
         assert!(!is_legacy_default(USER_CSS_TEMPLATE.as_bytes()));
         assert!(!is_legacy_default(DEFAULT_CSS.as_bytes()));
+    }
+}
+
+/// Commented starter `config.toml`, written on first run.
+const SETTINGS_TEMPLATE: &str = include_str!("settings-template.toml");
+
+/// Contents of `config.toml`. Every field has a default, so a partial or
+/// missing file is fine.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct Settings {
+    pub window: WindowSettings,
+    pub search: SearchSettings,
+    pub quicklinks: Vec<Quicklink>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Position {
+    #[default]
+    Center,
+    Top,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct WindowSettings {
+    pub position: Position,
+    pub width: i32,
+    pub top_margin: i32,
+}
+
+impl Default for WindowSettings {
+    fn default() -> Self {
+        Self {
+            position: Position::Center,
+            width: 720,
+            top_margin: 160,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SearchSettings {
+    pub max_results: usize,
+}
+
+impl Default for SearchSettings {
+    fn default() -> Self {
+        Self { max_results: 12 }
+    }
+}
+
+/// A user-defined web shortcut: `keyword term` opens `url` with `{query}`
+/// replaced; without `{query}` it is a plain bookmark.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Quicklink {
+    pub keyword: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+impl Settings {
+    /// Parse settings, clamping values that would break the window.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let mut settings: Settings = toml::from_str(text).map_err(|err| err.to_string())?;
+        settings.window.width = settings.window.width.clamp(360, 2000);
+        settings.window.top_margin = settings.window.top_margin.clamp(0, 2000);
+        settings.search.max_results = settings.search.max_results.clamp(1, 50);
+        settings
+            .quicklinks
+            .retain(|link| !link.keyword.trim().is_empty() && !link.url.trim().is_empty());
+        for link in &mut settings.quicklinks {
+            link.keyword = link.keyword.trim().to_lowercase();
+        }
+        Ok(settings)
+    }
+}
+
+/// Path of `config.toml`; written from the template on first run.
+pub fn settings_path() -> PathBuf {
+    let dir = config_dir();
+    let path = dir.join("config.toml");
+    if !path.exists()
+        && let Err(err) =
+            fs::create_dir_all(&dir).and_then(|()| fs::write(&path, SETTINGS_TEMPLATE))
+    {
+        warn!("could not write config.toml template: {err}");
+    }
+    path
+}
+
+/// Load settings from `path`. A missing file yields the defaults; a broken
+/// one yields the defaults plus the error to show the user.
+pub fn load_settings(path: &Path) -> (Settings, Option<String>) {
+    match fs::read_to_string(path) {
+        Ok(text) => match Settings::parse(&text) {
+            Ok(settings) => (settings, None),
+            Err(err) => {
+                warn!("invalid {}: {err}", path.display());
+                (Settings::default(), Some(err))
+            }
+        },
+        Err(_) => (Settings::default(), None),
     }
 }

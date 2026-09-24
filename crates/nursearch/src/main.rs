@@ -2,6 +2,7 @@ mod calc;
 mod config;
 mod db;
 mod desktop;
+mod direct;
 mod i18n;
 mod kcm;
 mod launch;
@@ -28,11 +29,16 @@ use std::rc::Rc;
 use std::time::Duration;
 
 const APP_ID: &str = "dev.nursearch.NurSearch";
+const WINDOW_HEIGHT: i32 = 520;
 
 struct AppState {
     apps: Vec<DesktopEntry>,
     /// KDE System Settings pages; empty outside Plasma.
-    settings: Vec<kcm::SettingsPage>,
+    settings_pages: Vec<kcm::SettingsPage>,
+    /// `config.toml`, re-read each time the launcher opens.
+    config: config::Settings,
+    /// Home directory for `~` paths.
+    home: Option<std::path::PathBuf>,
     /// The merged, ranked list currently shown on the root screen.
     results: Vec<SearchResult>,
     db: HistoryDb,
@@ -96,10 +102,45 @@ impl Launcher {
             exit_session(ui);
         }
         ui.status.set_visible(false);
+        reload_settings(ui);
         ui.entry.set_text("");
         ui.window.set_visible(true);
         ui.window.present();
         ui.entry.grab_focus();
+    }
+}
+
+/// Anchor the window to the top edge of the screen. A regular Wayland window
+/// cannot choose its position, so this makes it a layer-shell overlay, the
+/// way KRunner-style launchers are placed. Falls back to the centred window
+/// when the compositor lacks the protocol.
+fn place_at_top(window: &gtk::ApplicationWindow, margin: i32) {
+    use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+    if !gtk4_layer_shell::is_supported() {
+        warn!("layer-shell is not supported here; keeping the window centred");
+        return;
+    }
+    window.init_layer_shell();
+    window.set_namespace(Some("nursearch"));
+    window.set_layer(Layer::Overlay);
+    // On-demand focus: the launcher gets the keyboard when shown, and clicking
+    // elsewhere takes it away, which hides the launcher like a normal window.
+    window.set_keyboard_mode(KeyboardMode::OnDemand);
+    window.set_anchor(Edge::Top, true);
+    window.set_margin(Edge::Top, margin);
+}
+
+/// Re-read `config.toml` so edits apply on the next open. A broken file keeps
+/// the previous settings and says why.
+fn reload_settings(ui: &Ui) {
+    let (settings, error) = config::load_settings(&config::settings_path());
+    match error {
+        Some(error) => show_error(&ui.status, &i18n::error_settings(&error)),
+        None => {
+            ui.window
+                .set_default_size(settings.window.width, WINDOW_HEIGHT);
+            ui.state.borrow_mut().config = settings;
+        }
     }
 }
 
@@ -251,12 +292,15 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
         },
     };
 
-    let settings = kcm::discover();
-    info!("discovered {} settings pages", settings.len());
+    let settings_pages = kcm::discover();
+    info!("discovered {} settings pages", settings_pages.len());
+    let (settings, settings_error) = config::load_settings(&config::settings_path());
 
     let state = Rc::new(RefCell::new(AppState {
         apps,
-        settings,
+        settings_pages,
+        config: settings.clone(),
+        home: std::env::var_os("HOME").map(std::path::PathBuf::from),
         results: Vec::new(),
         db,
         host: None,
@@ -278,11 +322,15 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title("NurSearch")
-        .default_width(720)
-        .default_height(520)
+        .default_width(settings.window.width)
+        .default_height(WINDOW_HEIGHT)
         .decorated(false)
         .resizable(false)
         .build();
+
+    if settings.window.position == config::Position::Top {
+        place_at_top(&window, settings.window.top_margin);
+    }
 
     let root = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -353,6 +401,9 @@ fn build_ui(app: &gtk::Application, present: bool) -> Option<Launcher> {
 
     if let Some(error) = startup_error {
         show_error(&status, &error);
+    }
+    if let Some(error) = settings_error {
+        show_error(&status, &i18n::error_settings(&error));
     }
 
     // Build the plugin host with the UI as its message sink, then make it
@@ -608,7 +659,13 @@ fn dispatch_query(
         st.core = if keyword.is_some() {
             Vec::new()
         } else {
-            core_results(&st.apps, &st.settings, &query, &snapshot)
+            let sources = search::Sources {
+                apps: &st.apps,
+                settings: &st.settings_pages,
+                quicklinks: &st.config.quicklinks,
+                home: st.home.as_deref(),
+            };
+            core_results(&sources, &query, &snapshot)
         };
         st.snapshot = snapshot;
         st.plugin_results.clear();
@@ -637,7 +694,7 @@ fn render_root(state: &Rc<RefCell<AppState>>, list: &gtk::ListBox, empty: &gtk::
         for contributions in st.plugin_results.values() {
             all.extend(contributions.iter().cloned());
         }
-        finalize(all)
+        finalize(all, st.config.search.max_results)
     };
     state.borrow_mut().results = merged;
     rebuild_list(state, list, empty);
@@ -798,6 +855,7 @@ fn perform_action(result: &SearchResult, window: &gtk::ApplicationWindow) -> std
         Action::Launch(app) => launch::launch(app),
         Action::Run(command) => launch::run_command(command),
         Action::Detached { command, app_id } => launch::spawn_detached(command, app_id),
+        Action::Open(target) => launch::open_uri(target),
         Action::Copy(text) => {
             window.clipboard().set_text(text);
             Ok(())
@@ -937,7 +995,7 @@ fn host_capability(
             Err(outcome) => outcome,
         },
         HostCall::Open { target } => match require("open") {
-            Ok(()) => match launch::run_command(&["xdg-open".to_string(), target]) {
+            Ok(()) => match launch::open_uri(&target) {
                 Ok(()) => HostOutcome::ok(None),
                 Err(err) => HostOutcome::error(err.to_string()),
             },
@@ -1302,7 +1360,7 @@ fn run_action(ui: &Ui, action: nursearch_proto::Action, item_id: Option<String>)
             if !allowed("open") {
                 return deny(ui, "open");
             }
-            match launch::run_command(&["xdg-open".to_string(), url]) {
+            match launch::open_uri(&url) {
                 Ok(()) => finish_interaction(ui),
                 Err(err) => show_error(&ui.status, &i18n::error_action(&err.to_string())),
             }

@@ -1,0 +1,39 @@
+# NurSearch settings. Changes apply the next time the launcher opens,
+# except `window.position`, which needs a restart (log out and back in).
+
+[window]
+# "center" (default) or "top" (upper part of the screen, like KRunner).
+position = "center"
+# Width in pixels.
+width = 720
+# Distance from the top edge in pixels when position = "top".
+top_margin = 160
+
+[search]
+# How many results the list shows at most.
+max_results = 12
+
+# Quicklinks: type the keyword, a space, and a search term, e.g. "aw wayland".
+# {query} is replaced by the (URL-encoded) search term. Without {query} the
+# quicklink is a bookmark that opens its URL when you type its keyword.
+# Keywords of plugins (c, e, f, g, w, ...) take precedence.
+
+[[quicklinks]]
+keyword = "aw"
+name = "Arch Wiki"
+url = "https://wiki.archlinux.org/index.php?search={query}"
+
+[[quicklinks]]
+keyword = "aur"
+name = "AUR"
+url = "https://aur.archlinux.org/packages?K={query}"
+
+[[quicklinks]]
+keyword = "gh"
+name = "GitHub"
+url = "https://github.com/search?q={query}"
+
+[[quicklinks]]
+keyword = "yt"
+name = "YouTube"
+url = "https://www.youtube.com/results?search_query={query}"

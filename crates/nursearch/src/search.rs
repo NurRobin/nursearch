@@ -3,14 +3,14 @@
 //! and act on them uniformly.
 
 use crate::calc;
+use crate::config::Quicklink;
 use crate::db::{StatsSnapshot, normalize_query};
 use crate::desktop::DesktopEntry;
+use crate::direct::{self, Target};
 use crate::kcm::SettingsPage;
 use crate::rank::{app_match_score, usage_score};
 use crate::system::{COMMANDS, SystemCommand};
 use nursearch_proto::ResultItem;
-
-const MAX_RESULTS: usize = 12;
 
 /// What activating a result does.
 #[derive(Clone, Debug)]
@@ -24,6 +24,8 @@ pub enum Action {
         command: Vec<String>,
         app_id: String,
     },
+    /// Open a URL or file path with its default application.
+    Open(String),
     /// Copy text to the clipboard (calculator results).
     Copy(String),
     /// Enter a plugin view session for this item.
@@ -42,6 +44,10 @@ pub enum Kind {
     System,
     /// A KDE System Settings page.
     Settings,
+    /// A URL, path or quicklink opened directly.
+    Link,
+    /// A `> command` shell line.
+    Command,
     /// A contribution from a plugin; carries the plugin's display name for the badge.
     Plugin(String),
 }
@@ -53,6 +59,8 @@ impl Kind {
             Kind::Calculator => Some("=".to_string()),
             Kind::System => Some(crate::i18n::badge_system().to_string()),
             Kind::Settings => Some(crate::i18n::badge_settings().to_string()),
+            Kind::Link => Some(crate::i18n::badge_open().to_string()),
+            Kind::Command => Some(">".to_string()),
             Kind::Plugin(name) => Some(name.clone()),
         }
     }
@@ -100,22 +108,43 @@ pub struct SearchResult {
 /// Build the ranked result list for a query across all providers.
 #[cfg(test)]
 pub fn search(apps: &[DesktopEntry], query: &str, snapshot: &StatsSnapshot) -> Vec<SearchResult> {
-    finalize(core_results(apps, &[], query, snapshot))
+    let sources = Sources {
+        apps,
+        ..Sources::default()
+    };
+    finalize(core_results(&sources, query, snapshot), 12)
 }
 
+/// Everything the in-process core searches.
+#[derive(Default)]
+pub struct Sources<'a> {
+    pub apps: &'a [DesktopEntry],
+    pub settings: &'a [SettingsPage],
+    pub quicklinks: &'a [Quicklink],
+    /// Home directory for `~` paths.
+    pub home: Option<&'a std::path::Path>,
+}
+
+/// Score of a directly named target (URL, path, quicklink, command): above
+/// any app, since the query can only mean that target.
+const DIRECT_SCORE: i64 = 12_000;
+
 /// Results from the mandatory in-process core (apps, calculator, system,
-/// settings pages),
-/// unranked and untruncated so plugin contributions can be merged in before
-/// [`finalize`].
-pub fn core_results(
-    apps: &[DesktopEntry],
-    settings: &[SettingsPage],
-    query: &str,
-    snapshot: &StatsSnapshot,
-) -> Vec<SearchResult> {
+/// settings pages, direct targets), unranked and untruncated so plugin
+/// contributions can be merged in before [`finalize`].
+pub fn core_results(sources: &Sources, query: &str, snapshot: &StatsSnapshot) -> Vec<SearchResult> {
     let normalized = normalize_query(query);
     let mut results = Vec::new();
 
+    match direct::resolve(query, sources.quicklinks, sources.home) {
+        // A command line is an explicit mode: nothing else is meant.
+        Some(Target::Command(command)) => return vec![command_result(command)],
+        Some(target) => results.push(direct_result(target)),
+        None => {}
+    }
+
+    let settings = sources.settings;
+    let apps = sources.apps;
     if !normalized.is_empty() {
         if let Some(result) = calculator_result(&normalized) {
             results.push(result);
@@ -128,14 +157,14 @@ pub fn core_results(
 }
 
 /// Rank a merged set of results (core + plugin) and cap it to the display limit.
-pub fn finalize(mut results: Vec<SearchResult>) -> Vec<SearchResult> {
+pub fn finalize(mut results: Vec<SearchResult>, max_results: usize) -> Vec<SearchResult> {
     results.sort_by(|left, right| {
         right
             .score
             .cmp(&left.score)
             .then_with(|| left.title.to_lowercase().cmp(&right.title.to_lowercase()))
     });
-    results.truncate(MAX_RESULTS);
+    results.truncate(max_results);
     results
 }
 
@@ -202,6 +231,73 @@ fn settings_results(
             })
         })
         .collect()
+}
+
+fn command_result(command: String) -> SearchResult {
+    SearchResult {
+        title: command.clone(),
+        subtitle: Some(crate::i18n::run_command_hint().to_string()),
+        icon: Some("utilities-terminal".to_string()),
+        kind: Kind::Command,
+        score: DIRECT_SCORE,
+        history_key: None,
+        action: Action::Detached {
+            command: vec!["sh".to_string(), "-c".to_string(), command],
+            app_id: "shell".to_string(),
+        },
+    }
+}
+
+fn direct_result(target: Target) -> SearchResult {
+    let (title, subtitle, icon, open) = match target {
+        Target::Url(url) => (
+            url.clone(),
+            crate::i18n::open_url_hint().to_string(),
+            "internet-web-browser".to_string(),
+            url,
+        ),
+        Target::Path(path) => {
+            let icon = if path.is_dir() {
+                "folder"
+            } else {
+                "text-x-generic"
+            };
+            let shown = path.to_string_lossy().into_owned();
+            (
+                shown.clone(),
+                crate::i18n::open_path_hint().to_string(),
+                icon.to_string(),
+                shown,
+            )
+        }
+        Target::Quicklink {
+            name,
+            url,
+            term,
+            icon,
+        } => {
+            let title = match term {
+                Some(term) => format!("{name}: {term}"),
+                None => name,
+            };
+            (
+                title,
+                url.clone(),
+                icon.unwrap_or_else(|| "internet-web-browser".to_string()),
+                url,
+            )
+        }
+        Target::Command(_) => unreachable!("handled by command_result"),
+    };
+    SearchResult {
+        title,
+        subtitle: Some(subtitle),
+        icon: Some(icon),
+        kind: Kind::Link,
+        score: DIRECT_SCORE,
+        history_key: None,
+        action: Action::Open(open),
+    }
 }
 
 fn calculator_result(normalized: &str) -> Option<SearchResult> {
@@ -430,12 +526,17 @@ mod tests {
     #[test]
     fn settings_page_is_found_by_keyword_and_opens_system_settings() {
         let db = HistoryDb::open_in_memory().unwrap();
-        let results = finalize(core_results(
-            &[],
-            &[display_page()],
-            "hdr",
-            &db.snapshot("hdr"),
-        ));
+        let results = finalize(
+            core_results(
+                &Sources {
+                    settings: &[display_page()],
+                    ..Sources::default()
+                },
+                "hdr",
+                &db.snapshot("hdr"),
+            ),
+            12,
+        );
 
         assert_eq!(results[0].kind, Kind::Settings);
         assert!(
@@ -447,12 +548,17 @@ mod tests {
     fn settings_keyword_needs_a_word_start() {
         // "sol" sits inside "resolution" and must not surface the page.
         let db = HistoryDb::open_in_memory().unwrap();
-        let results = finalize(core_results(
-            &[],
-            &[display_page()],
-            "sol",
-            &db.snapshot("sol"),
-        ));
+        let results = finalize(
+            core_results(
+                &Sources {
+                    settings: &[display_page()],
+                    ..Sources::default()
+                },
+                "sol",
+                &db.snapshot("sol"),
+            ),
+            12,
+        );
 
         assert!(results.is_empty());
     }

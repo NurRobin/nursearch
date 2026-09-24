@@ -96,6 +96,31 @@ pub fn spawn_detached<S: AsRef<str>>(args: &[S], app_id: &str) -> io::Result<()>
     spawn_app(&args, app_id)
 }
 
+/// Open a URL or file path with its default application. `xdg-open` runs in
+/// its own unit named after that application, so a browser it starts is not
+/// attributed to (or killed with) the daemon.
+pub fn open_uri(target: &str) -> io::Result<()> {
+    let app_id = default_handler_id(target).unwrap_or_else(|| "xdg-open".to_string());
+    spawn_detached(&["xdg-open", target], &app_id)
+}
+
+/// Desktop file ID of the default handler for `target`, if GIO knows one.
+fn default_handler_id(target: &str) -> Option<String> {
+    let file = if target.contains("://") {
+        gio::File::for_uri(target)
+    } else {
+        gio::File::for_path(target)
+    };
+    let scheme = file.uri_scheme()?;
+    let info = if scheme == "file" {
+        file.query_default_handler(gio::Cancellable::NONE).ok()?
+    } else {
+        gio::AppInfo::default_for_uri_scheme(&scheme)?
+    };
+    let id = info.id()?;
+    Some(id.trim_end_matches(".desktop").to_string())
+}
+
 /// Desktop file ID without the `.desktop` suffix, e.g. `org.kde.dolphin`.
 fn desktop_file_id(path: &Path) -> String {
     path.file_stem()
