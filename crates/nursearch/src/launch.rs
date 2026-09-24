@@ -1,4 +1,4 @@
-use crate::desktop::DesktopEntry;
+use crate::desktop::{DesktopAction, DesktopEntry};
 use gtk4::gio;
 use gtk4::gio::prelude::*;
 use gtk4::glib;
@@ -75,6 +75,21 @@ pub fn launch(app: &DesktopEntry) -> io::Result<()> {
     }
 
     launch_exec(app)
+}
+
+/// Run one of an app's desktop actions. D-Bus activatable apps (and actions
+/// without Exec) are activated through GIO; the rest run their own Exec line
+/// in a unit named after the app.
+pub fn launch_action(app: &DesktopEntry, action: &DesktopAction) -> io::Result<()> {
+    if action.exec.is_none() || app.dbus_activatable {
+        let info = gio::DesktopAppInfo::from_filename(&app.path)
+            .ok_or_else(|| io::Error::other("desktop entry could not be loaded by GIO"))?;
+        info.launch_action(&action.id, gio::AppLaunchContext::NONE);
+        info!("GIO launched action {} of {}", action.id, app.name);
+        return Ok(());
+    }
+    let args = app.action_exec_args(action)?;
+    spawn_app(&args, &desktop_file_id(&app.path))
 }
 
 fn launch_exec(app: &DesktopEntry) -> io::Result<()> {

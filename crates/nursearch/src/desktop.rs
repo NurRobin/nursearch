@@ -16,6 +16,17 @@ pub struct DesktopEntry {
     pub path: PathBuf,
     pub dbus_activatable: bool,
     pub terminal: bool,
+    /// Desktop actions (`Actions=`), e.g. Firefox's "New Private Window".
+    pub actions: Vec<DesktopAction>,
+}
+
+/// One `[Desktop Action <id>]` of an application.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DesktopAction {
+    pub id: String,
+    pub name: String,
+    pub exec: Option<String>,
+    pub icon: Option<String>,
 }
 
 impl DesktopEntry {
@@ -33,6 +44,21 @@ impl DesktopEntry {
         }
 
         parts.join(" ")
+    }
+
+    /// Command line of one of this app's desktop actions.
+    pub fn action_exec_args(&self, action: &DesktopAction) -> io::Result<Vec<String>> {
+        let Some(exec) = action.exec.as_deref() else {
+            return Ok(Vec::new());
+        };
+        parse_exec_args(
+            exec,
+            &ExecContext {
+                name: &self.name,
+                icon: action.icon.as_deref().or(self.icon.as_deref()),
+                desktop_file: &self.path,
+            },
+        )
     }
 
     pub fn exec_args(&self) -> io::Result<Vec<String>> {
@@ -161,6 +187,9 @@ fn parse_desktop_content(
 ) -> Option<DesktopEntry> {
     let mut fields = DesktopFields::default();
     let mut in_desktop_entry = false;
+    // `[Desktop Action <id>]` groups, collected until we know `Actions=`.
+    let mut action_groups: HashMap<String, ActionFields> = HashMap::new();
+    let mut current_action: Option<String> = None;
 
     for raw_line in content.lines() {
         let line = raw_line.trim();
@@ -170,10 +199,10 @@ fn parse_desktop_content(
 
         if line.starts_with('[') && line.ends_with(']') {
             in_desktop_entry = line == "[Desktop Entry]";
-            continue;
-        }
-
-        if !in_desktop_entry {
+            current_action = line
+                .strip_prefix("[Desktop Action ")
+                .and_then(|rest| rest.strip_suffix(']'))
+                .map(|id| id.trim().to_string());
             continue;
         }
 
@@ -182,6 +211,23 @@ fn parse_desktop_content(
         };
         let value = value.trim().to_string();
         let (key, locale) = split_locale_key(raw_key.trim());
+
+        if let Some(id) = &current_action {
+            let action = action_groups.entry(id.clone()).or_default();
+            match key {
+                "Name" => {
+                    action.name.insert(locale, value);
+                }
+                "Exec" => action.exec = Some(value),
+                "Icon" => action.icon = Some(value),
+                _ => {}
+            }
+            continue;
+        }
+
+        if !in_desktop_entry {
+            continue;
+        }
 
         match key {
             "Name" => {
@@ -206,6 +252,7 @@ fn parse_desktop_content(
             "TryExec" => fields.try_exec = Some(value),
             "DBusActivatable" => fields.dbus_activatable = parse_bool(&value),
             "Terminal" => fields.terminal = parse_bool(&value),
+            "Actions" => fields.actions = parse_list(&value),
             _ => {}
         }
     }
@@ -241,7 +288,28 @@ fn parse_desktop_content(
         path: path.to_path_buf(),
         dbus_activatable: fields.dbus_activatable,
         terminal: fields.terminal,
+        actions: fields
+            .actions
+            .iter()
+            .filter_map(|id| {
+                let group = action_groups.get(id)?;
+                let name = localized_value(&group.name).filter(|name| !name.is_empty())?;
+                Some(DesktopAction {
+                    id: id.clone(),
+                    name,
+                    exec: group.exec.clone().filter(|exec| !exec.is_empty()),
+                    icon: group.icon.clone().filter(|icon| !icon.is_empty()),
+                })
+            })
+            .collect(),
     })
+}
+
+#[derive(Default)]
+struct ActionFields {
+    name: HashMap<Option<String>, String>,
+    exec: Option<String>,
+    icon: Option<String>,
 }
 
 #[derive(Default)]
@@ -260,6 +328,7 @@ struct DesktopFields {
     try_exec: Option<String>,
     dbus_activatable: bool,
     terminal: bool,
+    actions: Vec<String>,
 }
 
 fn split_locale_key(key: &str) -> (&str, Option<String>) {
@@ -625,5 +694,22 @@ mod tests {
 
         assert_eq!(names, vec!["Firefox (mine)"]);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn parses_listed_desktop_actions_only() {
+        let content = "[Desktop Entry]\nType=Application\nName=Firefox\nExec=firefox %u\n\
+                       Actions=new-private-window;missing;\n\
+                       [Desktop Action new-private-window]\nName=New Private Window\n\
+                       Exec=firefox --private-window %u\n\
+                       [Desktop Action unlisted]\nName=Unlisted\nExec=firefox --x\n";
+        let app = parse_desktop_content(content, Path::new("/tmp/firefox.desktop"), &[]).unwrap();
+
+        assert_eq!(app.actions.len(), 1);
+        assert_eq!(app.actions[0].name, "New Private Window");
+        assert_eq!(
+            app.action_exec_args(&app.actions[0]).unwrap(),
+            vec!["firefox", "--private-window"]
+        );
     }
 }

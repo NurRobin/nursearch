@@ -14,6 +14,8 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
   comment matching
 - Inline calculator: type an expression (e.g. `2 + 3 * 4`, `2,5 × 4`, `2^10`); `Enter` copies the
   result. A decimal comma is answered with a comma
+- Desktop actions: "firefox priv" or "private" offers Firefox's "New Private Window"; actions
+  rank below their app
 - Direct targets: paste a URL (`https://…`, `github.com/…`) or a path (`~/Downloads`, `/etc`) and
   press Enter to open it; `> command` runs a shell command line
 - Quicklinks from `~/.config/nursearch/config.toml`: `aw wayland` searches the Arch Wiki, `gh`,

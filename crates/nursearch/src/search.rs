@@ -8,7 +8,7 @@ use crate::db::{StatsSnapshot, normalize_query};
 use crate::desktop::DesktopEntry;
 use crate::direct::{self, Target};
 use crate::kcm::SettingsPage;
-use crate::rank::{app_match_score, usage_score};
+use crate::rank::{app_match_score, usage_score, word_start_score};
 use crate::system::{COMMANDS, SystemCommand};
 use nursearch_proto::ResultItem;
 
@@ -17,6 +17,11 @@ use nursearch_proto::ResultItem;
 pub enum Action {
     /// Launch a discovered desktop application.
     Launch(DesktopEntry),
+    /// Run one of an application's desktop actions.
+    AppShortcut {
+        app: DesktopEntry,
+        action: crate::desktop::DesktopAction,
+    },
     /// Run a short-lived fixed command (system actions).
     Run(Vec<String>),
     /// Start a long-running program in its own systemd unit, like an app.
@@ -173,12 +178,12 @@ fn app_results(
     normalized: &str,
     snapshot: &StatsSnapshot,
 ) -> Vec<SearchResult> {
-    apps.iter()
-        .filter_map(|app| {
-            let base = app_match_score(app, normalized)?;
+    let mut results = Vec::new();
+    for app in apps {
+        if let Some(base) = app_match_score(app, normalized) {
             let key = app.path.to_string_lossy().to_string();
             let score = base + usage_score(&snapshot.stats_for(&key));
-            Some(SearchResult {
+            results.push(SearchResult {
                 title: app.name.clone(),
                 subtitle: app.generic_name.clone().or_else(|| app.comment.clone()),
                 icon: app.icon.clone(),
@@ -186,9 +191,65 @@ fn app_results(
                 score,
                 history_key: Some(key),
                 action: Action::Launch(app.clone()),
+            });
+        }
+        results.extend(desktop_action_results(app, normalized, snapshot));
+    }
+    results
+}
+
+/// Desktop actions need a few typed characters, so "f" does not list every
+/// "New Window" on the system.
+const MIN_ACTION_QUERY: usize = 3;
+/// Keeps an action below its own app for the same query.
+const ACTION_PENALTY: i64 = 1_500;
+
+/// "firefox priv" or "private" → "Firefox: New Private Window".
+fn desktop_action_results(
+    app: &DesktopEntry,
+    normalized: &str,
+    snapshot: &StatsSnapshot,
+) -> Vec<SearchResult> {
+    if normalized.chars().count() < MIN_ACTION_QUERY {
+        return Vec::new();
+    }
+    app.actions
+        .iter()
+        .filter_map(|action| {
+            let combined = format!("{} {}", app.name, action.name);
+            let base = word_start_score(&action.name, normalized)
+                .into_iter()
+                .chain(all_words_start(&combined, normalized))
+                .max()?
+                - ACTION_PENALTY;
+            let key = format!("{}#{}", app.path.to_string_lossy(), action.id);
+            Some(SearchResult {
+                title: format!("{}: {}", app.name, action.name),
+                subtitle: app.generic_name.clone().or_else(|| app.comment.clone()),
+                icon: action.icon.clone().or_else(|| app.icon.clone()),
+                kind: Kind::App,
+                score: base + usage_score(&snapshot.stats_for(&key)),
+                history_key: Some(key),
+                action: Action::AppShortcut {
+                    app: app.clone(),
+                    action: action.clone(),
+                },
             })
         })
         .collect()
+}
+
+/// Score when every word of `query` starts a word of `text` ("firefox priv"
+/// in "Firefox New Private Window").
+fn all_words_start(text: &str, query: &str) -> Option<i64> {
+    let words: Vec<&str> = query.split_whitespace().collect();
+    if words.len() < 2 {
+        return None;
+    }
+    words
+        .iter()
+        .all(|word| word_start_score(text, word).is_some())
+        .then(|| 6_500 - text.len() as i64)
 }
 
 /// Score penalty for settings pages, so an app with the same match wins: the
@@ -362,6 +423,7 @@ mod tests {
             path: PathBuf::from(path),
             dbus_activatable: false,
             terminal: false,
+            actions: Vec::new(),
         }
     }
 
@@ -561,6 +623,40 @@ mod tests {
         );
 
         assert!(results.is_empty());
+    }
+
+    fn firefox() -> DesktopEntry {
+        let mut app = test_app(
+            "Firefox",
+            Some("Web Browser"),
+            None,
+            &[],
+            "/tmp/firefox.desktop",
+        );
+        app.actions = vec![crate::desktop::DesktopAction {
+            id: "new-private-window".to_string(),
+            name: "New Private Window".to_string(),
+            exec: Some("firefox --private-window".to_string()),
+            icon: None,
+        }];
+        app
+    }
+
+    #[test]
+    fn desktop_action_is_found_by_its_name_or_app_plus_words() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        for query in ["private", "firefox priv"] {
+            let results = search(&[firefox()], query, &db.snapshot(query));
+            assert_eq!(results[0].title, "Firefox: New Private Window", "{query}");
+        }
+    }
+
+    #[test]
+    fn app_ranks_above_its_own_actions() {
+        let db = HistoryDb::open_in_memory().unwrap();
+        let results = search(&[firefox()], "firefox", &db.snapshot("firefox"));
+        assert_eq!(results[0].title, "Firefox");
+        assert!(search(&[firefox()], "fi", &db.snapshot("fi")).len() == 1);
     }
 
     #[test]

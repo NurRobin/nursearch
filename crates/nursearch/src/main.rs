@@ -914,6 +914,7 @@ fn launch_index(
 fn perform_action(result: &SearchResult, window: &gtk::ApplicationWindow) -> std::io::Result<()> {
     match &result.action {
         Action::Launch(app) => launch::launch(app),
+        Action::AppShortcut { app, action } => launch::launch_action(app, action),
         Action::Run(command) => launch::run_command(command),
         Action::Detached { command, app_id } => launch::spawn_detached(command, app_id),
         Action::Open(target) => launch::open_uri(target),
