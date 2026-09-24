@@ -12,7 +12,8 @@ The initial MVP targets CachyOS / Arch Linux with KDE Plasma on Wayland.
 - Discovers visible `.desktop` applications from common system and user application directories
 - Fuzzy app search with exact, prefix, substring, character-order, keyword, generic-name, and
   comment matching
-- Inline calculator: type an expression (e.g. `2 + 3 * 4`); `Enter` copies the result
+- Inline calculator: type an expression (e.g. `2 + 3 * 4`, `2,5 × 4`, `2^10`); `Enter` copies the
+  result. A decimal comma is answered with a comma
 - KDE System Settings pages as results: `bluetooth`, `hdr` or `mouse` opens the matching page,
   found through the keywords each settings module ships
 - Built-in system actions: lock, log out, suspend, reboot, shut down (matched by word start).
